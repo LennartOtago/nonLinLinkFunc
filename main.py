@@ -189,127 +189,127 @@ plt.show()
 
 ##
 
-ATA= np.matmul((A_O3 *2).T , A_O3 *2)
-ATy = np.matmul((A_O3 *2).T, y)
-
-A= A_O3 *2
-
-tol = 1e-8
-SetDelta = Parabel(height_values, 30, 1e-7, 0.8e-4)
-
-TriU = np.tril(np.triu(np.ones((n, n)), k=1), 1) * SetDelta
-TriL = np.triu(np.tril(np.ones((n, n)), k=-1), -1) * SetDelta.T
-Diag = np.eye(n) * np.sum(TriU + TriL, 0)
-
-L_d = -TriU + Diag - TriL
-L_d[0, 0] = 2 * L_d[0, 0]
-L_d[-1, -1] = 2 * L_d[-1, -1]
-ATA = np.matmul(A.T, A)
-B0 = (ATA + 1 / gamma0 * L_d)
-B_inv_A_trans_y0, exitCode = scy.sparse.linalg.gmres(B0, ATy[:, 0], rtol=tol, restart=25)
-
-
-
-def MargPostSupp(Params):
-    list = []
-    list.append(gamma0 * 1.75 > Params[0] >gamma0 * 0.25)
-    list.append(36> Params[1] > 29)
-    list.append(1e-4 > Params[2] > 1e-9)
-    list.append(1e-4 > Params[3] > 1e-5)
-
-    return all(list)
-
-tWalkSampNumDel = 30000
-burnInDel = 100
-
-log_post = lambda Params: -log_postO3(Params, ATA, ATy, height_values, B_inv_A_trans_y0, VMR_O3, y, A, gamma0)
-d0Mean = 0.8e-4
-hMean = height_values[VMR_O3[:] == np.max(VMR_O3[:])][0]
-a0Mean = 2e-9
-
-MargPost = pytwalk.pytwalk(n=4, U=log_post, Supp=MargPostSupp)
-x0 = np.array([gamma0, hMean, a0Mean, d0Mean])
-xp0 = (1 + 1e-10) * x0
-MargPost.Run(T=tWalkSampNumDel + burnInDel, x0=x0, xp0=xp0)
-
-Samps = MargPost.Output
-
-
-fig4, ax4 = plt.subplots(4, 1, figsize=(8,15))
-# ax4 = BigFig.add_subplot(4, 3, 4)
-ax4[0].hist(Samps[burnInDel:,0], bins=50)
-ax4[0].axvline(x=gamma0, color='r')
-ax4[0].set_xlabel('$\gamma$')
-# ax5 = BigFig.add_subplot(4, 3, 7)
-ax4[1].hist(Samps[burnInDel:,1], bins=50)
-ax4[1].set_xlabel('$h_0$')
-# ax6 = BigFig.add_subplot(4, 3,10)
-ax4[2].hist(Samps[burnInDel:,2], bins=50)
-ax4[2].set_xlabel('$a$')
-# ax7 = BigFig.add_subplot(4, 3,13)
-ax4[3].hist(Samps[burnInDel:,3], bins=50)
-ax4[3].set_xlabel('$\delta_0$')
-#ax4[4].hist(Samps[burnInDel:,4], bins=50)
-
-# ax4[3].axvline(x=deltRes[0,2]/0.4, color='r')
-# plt.savefig('TWalkHistO3.png')
-#plt.show()
-
-print(np.mean(Samps,0))
-fig4, ax4 = plt.subplots()
-
-ax4.hist(Samps[burnInDel:,4], bins=50)
-
-plt.show()
-numOfO3 = 100
-n = SpecNumLayers
-m = len(y)
-O3_Prof = np.zeros((numOfO3,n))
-for i in range(0, numOfO3):
-    MWGRand =  np.random.randint(low=0, high=tWalkSampNumDel)
-    SetGamma = Samps[burnInDel+MWGRand,0]
-    SetDelta = Parabel(height_values, *Samps[MWGRand,1:-1])
-    #SetDelta = np.ones((1,n)) * Samps[MWGRand,3]
-
-    TriU = np.tril(np.triu(np.ones((n, )), k=1), 1) * SetDelta
-    TriL = np.triu(np.tril(np.ones((n, n)), k=-1), -1) * SetDelta.T
-    Diag = np.eye(n) * np.sum(TriU + TriL, 0)
-
-    L_d = -TriU + Diag - TriL
-    L_d[0, 0] = 2 * L_d[0, 0]
-    L_d[-1, -1] = 2 * L_d[-1, -1]
-    SetB = SetGamma * ATA + L_d
-
-    W = np.random.multivariate_normal(np.zeros(len(A)), np.eye(len(A)))
-    v_1 = np.sqrt(SetGamma) * A.T @ W.reshape((m, 1))
-    W2 = np.random.multivariate_normal(np.zeros(len(L_d)), L_d)
-    v_2 = W2.reshape((n, 1))
-
-    RandX = (SetGamma * ATy + v_1 + v_2)
-
-    Results, exitCode = scy.sparse.linalg.gmres(SetB, RandX[0::, 0], rtol=1e-5)
-    O3_Prof[i,:] = Results / theta_scale_O3
-
-
-
-ResCol = "#1E88E5"
-TrueCol = [50/255,220/255, 0/255]
-
-fig3, ax1 = plt.subplots()
-
-
-
-ax1.plot(VMR_O3,height_values,marker = 'o',markerfacecolor = TrueCol, color = TrueCol , label = 'true profile', zorder=1 ,linewidth = 1.5, markersize =7)
-
-
-for r in range(1,numOfO3):
-    Sol = O3_Prof[r, :]
-
-    ax1.plot(Sol,height_values,marker= '+',color = ResCol, zorder = 0, linewidth = 0.5, markersize = 5, alpha = 0.3)
-
-ax1.plot(np.mean(O3_Prof[1:],0), height_values, marker='>', color="k", label='sample mean', zorder=2, linewidth=0.5,
-             markersize=5)
-
-plt.savefig('O3Results.png')
-plt.show()
-print("done")
+# ATA= np.matmul((A_O3 *2).T , A_O3 *2)
+# ATy = np.matmul((A_O3 *2).T, y)
+#
+# A= A_O3 *2
+#
+# tol = 1e-8
+# SetDelta = Parabel(height_values, 30, 1e-7, 0.8e-4)
+#
+# TriU = np.tril(np.triu(np.ones((n, n)), k=1), 1) * SetDelta
+# TriL = np.triu(np.tril(np.ones((n, n)), k=-1), -1) * SetDelta.T
+# Diag = np.eye(n) * np.sum(TriU + TriL, 0)
+#
+# L_d = -TriU + Diag - TriL
+# L_d[0, 0] = 2 * L_d[0, 0]
+# L_d[-1, -1] = 2 * L_d[-1, -1]
+# ATA = np.matmul(A.T, A)
+# B0 = (ATA + 1 / gamma0 * L_d)
+# B_inv_A_trans_y0, exitCode = scy.sparse.linalg.gmres(B0, ATy[:, 0], rtol=tol, restart=25)
+#
+#
+#
+# def MargPostSupp(Params):
+#     list = []
+#     list.append(gamma0 * 1.75 > Params[0] >gamma0 * 0.25)
+#     list.append(36> Params[1] > 29)
+#     list.append(1e-4 > Params[2] > 1e-9)
+#     list.append(1e-4 > Params[3] > 1e-5)
+#
+#     return all(list)
+#
+# tWalkSampNumDel = 30000
+# burnInDel = 100
+#
+# log_post = lambda Params: -log_postO3(Params, ATA, ATy, height_values, B_inv_A_trans_y0, VMR_O3, y, A, gamma0)
+# d0Mean = 0.8e-4
+# hMean = height_values[VMR_O3[:] == np.max(VMR_O3[:])][0]
+# a0Mean = 2e-9
+#
+# MargPost = pytwalk.pytwalk(n=4, U=log_post, Supp=MargPostSupp)
+# x0 = np.array([gamma0, hMean, a0Mean, d0Mean])
+# xp0 = (1 + 1e-10) * x0
+# MargPost.Run(T=tWalkSampNumDel + burnInDel, x0=x0, xp0=xp0)
+#
+# Samps = MargPost.Output
+#
+#
+# fig4, ax4 = plt.subplots(4, 1, figsize=(8,15))
+# # ax4 = BigFig.add_subplot(4, 3, 4)
+# ax4[0].hist(Samps[burnInDel:,0], bins=50)
+# ax4[0].axvline(x=gamma0, color='r')
+# ax4[0].set_xlabel('$\gamma$')
+# # ax5 = BigFig.add_subplot(4, 3, 7)
+# ax4[1].hist(Samps[burnInDel:,1], bins=50)
+# ax4[1].set_xlabel('$h_0$')
+# # ax6 = BigFig.add_subplot(4, 3,10)
+# ax4[2].hist(Samps[burnInDel:,2], bins=50)
+# ax4[2].set_xlabel('$a$')
+# # ax7 = BigFig.add_subplot(4, 3,13)
+# ax4[3].hist(Samps[burnInDel:,3], bins=50)
+# ax4[3].set_xlabel('$\delta_0$')
+# #ax4[4].hist(Samps[burnInDel:,4], bins=50)
+#
+# # ax4[3].axvline(x=deltRes[0,2]/0.4, color='r')
+# # plt.savefig('TWalkHistO3.png')
+# #plt.show()
+#
+# print(np.mean(Samps,0))
+# fig4, ax4 = plt.subplots()
+#
+# ax4.hist(Samps[burnInDel:,4], bins=50)
+#
+# plt.show()
+# numOfO3 = 100
+# n = SpecNumLayers
+# m = len(y)
+# O3_Prof = np.zeros((numOfO3,n))
+# for i in range(0, numOfO3):
+#     MWGRand =  np.random.randint(low=0, high=tWalkSampNumDel)
+#     SetGamma = Samps[burnInDel+MWGRand,0]
+#     SetDelta = Parabel(height_values, *Samps[MWGRand,1:-1])
+#     #SetDelta = np.ones((1,n)) * Samps[MWGRand,3]
+#
+#     TriU = np.tril(np.triu(np.ones((n, )), k=1), 1) * SetDelta
+#     TriL = np.triu(np.tril(np.ones((n, n)), k=-1), -1) * SetDelta.T
+#     Diag = np.eye(n) * np.sum(TriU + TriL, 0)
+#
+#     L_d = -TriU + Diag - TriL
+#     L_d[0, 0] = 2 * L_d[0, 0]
+#     L_d[-1, -1] = 2 * L_d[-1, -1]
+#     SetB = SetGamma * ATA + L_d
+#
+#     W = np.random.multivariate_normal(np.zeros(len(A)), np.eye(len(A)))
+#     v_1 = np.sqrt(SetGamma) * A.T @ W.reshape((m, 1))
+#     W2 = np.random.multivariate_normal(np.zeros(len(L_d)), L_d)
+#     v_2 = W2.reshape((n, 1))
+#
+#     RandX = (SetGamma * ATy + v_1 + v_2)
+#
+#     Results, exitCode = scy.sparse.linalg.gmres(SetB, RandX[0::, 0], rtol=1e-5)
+#     O3_Prof[i,:] = Results / theta_scale_O3
+#
+#
+#
+# ResCol = "#1E88E5"
+# TrueCol = [50/255,220/255, 0/255]
+#
+# fig3, ax1 = plt.subplots()
+#
+#
+#
+# ax1.plot(VMR_O3,height_values,marker = 'o',markerfacecolor = TrueCol, color = TrueCol , label = 'true profile', zorder=1 ,linewidth = 1.5, markersize =7)
+#
+#
+# for r in range(1,numOfO3):
+#     Sol = O3_Prof[r, :]
+#
+#     ax1.plot(Sol,height_values,marker= '+',color = ResCol, zorder = 0, linewidth = 0.5, markersize = 5, alpha = 0.3)
+#
+# ax1.plot(np.mean(O3_Prof[1:],0), height_values, marker='>', color="k", label='sample mean', zorder=2, linewidth=0.5,
+#              markersize=5)
+#
+# plt.savefig('O3Results.png')
+# plt.show()
+# print("done")
