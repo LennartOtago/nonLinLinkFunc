@@ -146,36 +146,44 @@ scalingConst = 1e11
 
 numberOfDat = 10
 DataY = np.zeros((SpecNumMeas,numberOfDat))
+newO3 = np.zeros((SpecNumLayers,numberOfDat))
 nonLinY = np.zeros((SpecNumMeas,numberOfDat))
+J = np.zeros((numberOfDat,SpecNumMeas,SpecNumLayers))
 const = np.linspace(0,5e-6,numberOfDat)
 fig3, ax3 = plt.subplots()
 fig2, ax2 = plt.subplots()
 fig1, ax1 = plt.subplots()
 fig0, ax0 = plt.subplots()
 for i in range(0,numberOfDat):
-    for j in range(0,SpecNumLayers):
-        newO3 = VMR_O3
-        newO3[j] = newO3[j] + const[i]#np.ones(VMR_O3.shape)
-    #newO3 = np.random.multivariate_normal(VMR_O3.reshape(SpecNumLayers), np.eye(SpecNumLayers)).reshape((SpecNumLayers,1))
-        A_O3, theta_scale_O3 = composeAforO3(A_lin, temp_values, pressure_values, ind, scalingConst)
-        nonLinA = calcNonLin(A_lin, pressure_values, ind, temp_values, newO3, AscalConstKmToCm,
-                         SpecNumLayers, SpecNumMeas)
+
+    tryO3 = VMR_O3 + const[i]
+    #tryO3[j] = VMR_O3[j] + const[i]
+    newO3[:,i] = tryO3.reshape(SpecNumLayers)
+    #newO3[:,i]= np.random.multivariate_normal(VMR_O3.reshape(SpecNumLayers), np.eye(SpecNumLayers))
 
 
-        #const is *0.991
+    A_O3, theta_scale_O3 = composeAforO3(A_lin, temp_values, pressure_values, ind, scalingConst)
+    nonLinA = calcNonLin(A_lin, pressure_values, ind, temp_values, newO3[:,i].reshape((SpecNumLayers,1)), AscalConstKmToCm,
+                     SpecNumLayers, SpecNumMeas)
 
 
-        DataY[:, i] = np.matmul(A_O3 *2 , newO3  * theta_scale_O3).reshape(SpecNumMeas)
-        nonLinY[:, i] = np.matmul(A_O3 * nonLinA, newO3 * theta_scale_O3).reshape(SpecNumMeas)
-
-    #DataY[:, i] = DataY[:, i] * (0.1*np.sinc(x) * np.exp(-0.3 * x)).reshape(SpecNumMeas)
-
-        ax1.scatter(DataY[:, i],tang_heights_lin, c='red')
-        ax3.scatter(DataY[:, i]-nonLinY[:, i],tang_heights_lin, c='red')
-        ax2.scatter(nonLinY[:, i],tang_heights_lin)
-        ax0.scatter(newO3,height_values)
+    #const is *0.991
 
 
+    DataY[:, i] = np.matmul(A_O3 *2 ,newO3[:,i].reshape((SpecNumLayers,1))  * theta_scale_O3).reshape(SpecNumMeas)
+    nonLinY[:, i] = np.matmul(A_O3 * nonLinA,newO3[:,i].reshape((SpecNumLayers,1)) * theta_scale_O3).reshape(SpecNumMeas)
+
+#DataY[:, i] = DataY[:, i] * (0.1*np.sinc(x) * np.exp(-0.3 * x)).reshape(SpecNumMeas)
+
+    ax1.scatter(DataY[:, i],tang_heights_lin, c='red')
+    ax3.scatter(DataY[:, i]-nonLinY[:, i],tang_heights_lin, c='red')
+    ax2.scatter(nonLinY[:, i],tang_heights_lin)
+    ax0.scatter(newO3[:,i],height_values)
+
+    #construct Jacobian
+    for j1 in range(0,SpecNumMeas):
+        for j2 in range(0,SpecNumLayers):
+            J[i][j1,j2] = (DataY[j1, i] - nonLinY[j1, i])/(newO3[:,i])
 #np.savetxt('theta_scale_O3.txt', [theta_scale_O3], fmt = '%.15f', delimiter= '\t')
 #np.savetxt('AMat.txt', A, fmt = '%.15f', delimiter= '\t')
 #np.savetxt('ALinMat.txt', A_lin, fmt = '%.15f', delimiter= '\t')
@@ -186,7 +194,7 @@ sinc_Values = np.sinc(height_values)
 ax3.set_title("difference")
 plt.show()
 
-
+print("done")
 ##
 
 # ATA= np.matmul((A_O3 *2).T , A_O3 *2)
