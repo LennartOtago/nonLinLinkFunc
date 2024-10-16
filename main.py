@@ -144,55 +144,103 @@ ind = 623
 SNR = 60
 scalingConst = 1e11
 
-numberOfDat = 10
+numberOfDat = SpecNumMeas
 DataY = np.zeros((SpecNumMeas,numberOfDat))
+relErr = np.zeros((SpecNumMeas,numberOfDat))
 newO3 = np.zeros((SpecNumLayers,numberOfDat))
 nonLinY = np.zeros((SpecNumMeas,numberOfDat))
-J = np.zeros((numberOfDat,SpecNumMeas,SpecNumLayers))
+J = np.zeros((SpecNumMeas,SpecNumLayers))
 const = np.linspace(0,5e-6,numberOfDat)
+
+# OrgData
+A_O3, theta_scale_O3 = composeAforO3(A_lin, temp_values, pressure_values, ind, scalingConst)
+nonLinA = calcNonLin(A_lin, pressure_values, ind, temp_values, VMR_O3,
+                     AscalConstKmToCm,
+                     SpecNumLayers, SpecNumMeas)
+OrgData = np.matmul(A_O3 * nonLinA,VMR_O3 * theta_scale_O3).reshape(SpecNumMeas)
+
+
 fig3, ax3 = plt.subplots()
 fig2, ax2 = plt.subplots()
 fig1, ax1 = plt.subplots()
 fig0, ax0 = plt.subplots()
 for i in range(0,numberOfDat):
 
-    tryO3 = VMR_O3 + const[i]
+    tryO3 = np.copy(VMR_O3)
+    tryO3[i] = VMR_O3[i] + 1e-6
+
     #tryO3[j] = VMR_O3[j] + const[i]
     newO3[:,i] = tryO3.reshape(SpecNumLayers)
-    #newO3[:,i]= np.random.multivariate_normal(VMR_O3.reshape(SpecNumLayers), np.eye(SpecNumLayers))
+    #newO3[:,i]= np.random.multivariate_normal(VMR_O3.reshape(SpecNumLayers), 1e-8 * np.eye(SpecNumLayers))
 
-
+    newO3[:, i][newO3[:,i]<0] = 0
     A_O3, theta_scale_O3 = composeAforO3(A_lin, temp_values, pressure_values, ind, scalingConst)
-    nonLinA = calcNonLin(A_lin, pressure_values, ind, temp_values, newO3[:,i].reshape((SpecNumLayers,1)), AscalConstKmToCm,
+    nonLinA = calcNonLin(A_lin, pressure_values, ind, temp_values,   newO3[:,i].reshape((SpecNumLayers,1)), AscalConstKmToCm,
                      SpecNumLayers, SpecNumMeas)
 
 
     #const is *0.991
 
 
-    DataY[:, i] = np.matmul(A_O3 *2 ,newO3[:,i].reshape((SpecNumLayers,1))  * theta_scale_O3).reshape(SpecNumMeas)
-    nonLinY[:, i] = np.matmul(A_O3 * nonLinA,newO3[:,i].reshape((SpecNumLayers,1)) * theta_scale_O3).reshape(SpecNumMeas)
+    DataY[:, i] = np.matmul(A_O3 *2 ,  newO3[:,i].reshape((SpecNumLayers,1))  * theta_scale_O3).reshape(SpecNumMeas)
+    nonLinY[:, i] = np.matmul(A_O3 * nonLinA,  newO3[:,i].reshape((SpecNumLayers,1)) * theta_scale_O3).reshape(SpecNumMeas)
 
 #DataY[:, i] = DataY[:, i] * (0.1*np.sinc(x) * np.exp(-0.3 * x)).reshape(SpecNumMeas)
 
     ax1.scatter(DataY[:, i],tang_heights_lin, c='red')
-    ax3.scatter(DataY[:, i]-nonLinY[:, i],tang_heights_lin, c='red')
+    relErr[:,i] = (DataY[:, i]-nonLinY[:, i])/nonLinY[:, i]
+    #ax3.scatter((DataY[:, i]-nonLinY[:, i])/nonLinY[:, i],tang_heights_lin)
+
+
     ax2.scatter(nonLinY[:, i],tang_heights_lin)
-    ax0.scatter(newO3[:,i],height_values)
+    #ax0.plot(newO3[:,i],height_values)
 
     #construct Jacobian
-    for j1 in range(0,SpecNumMeas):
-        for j2 in range(0,SpecNumLayers):
-            J[i][j1,j2] = (DataY[j1, i] - nonLinY[j1, i])/(newO3[:,i])
+#    for j1 in range(0,SpecNumMeas):
+#    J[j1,i] = (OrgData[j1] - nonLinY[j1, i])/(VMR_O3[i] - tryO3[i])
 #np.savetxt('theta_scale_O3.txt', [theta_scale_O3], fmt = '%.15f', delimiter= '\t')
 #np.savetxt('AMat.txt', A, fmt = '%.15f', delimiter= '\t')
 #np.savetxt('ALinMat.txt', A_lin, fmt = '%.15f', delimiter= '\t')
 #y, gamma0 = add_noise(nonLinY.reshape((m,1)), SNR)
 
+#check linearly independent
 
-sinc_Values = np.sinc(height_values)
+
+
+xNonLin, exitCode = scy.sparse.linalg.gmres(nonLinY, np.zeros(SpecNumMeas))
+
+xLin, exitCode = scy.sparse.linalg.gmres(DataY, np.zeros(SpecNumMeas))
+
+QnonLin, RnonLin = np.linalg.qr(nonLinY, mode = 'complete')
+QLin, RLin = np.linalg.qr(DataY, mode = 'complete')
+
+print(np.allclose(nonLinY, np.dot(QnonLin, RnonLin)))
+print(np.allclose(DataY, np.dot(QLin, RLin)))
+nonLinMap = QnonLin#/sum(QnonLin,0)
+LinMap = QLin#/sum(QLin,0)
+
 ax3.set_title("difference")
+#plt.show()
+xtry = np.zeros((SpecNumMeas,1))
+xtry[1] = -1
+fig0, ax0 = plt.subplots()
+ax0.plot(np.matmul(LinMap,xtry),tang_heights_lin)
 plt.show()
+
+fig4, ax4 = plt.subplots(14, 1, figsize=(8,15))
+for i in range(0,14):
+    ax4[i].hist(relErr[i, :], bins=50)
+
+
+fig5, ax5= plt.subplots(14, 1, figsize=(8,15))
+for i in range(19,33):
+    ax5[i-19].hist(relErr[i, :], bins=50)
+
+
+
+
+plt.show()
+
 
 print("done")
 ##
