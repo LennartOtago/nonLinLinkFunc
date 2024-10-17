@@ -144,7 +144,7 @@ ind = 623
 SNR = 60
 scalingConst = 1e11
 
-numberOfDat = SpecNumMeas
+numberOfDat = 300#SpecNumLayers
 DataY = np.zeros((SpecNumMeas,numberOfDat))
 relErr = np.zeros((SpecNumMeas,numberOfDat))
 newO3 = np.zeros((SpecNumLayers,numberOfDat))
@@ -160,18 +160,29 @@ nonLinA = calcNonLin(A_lin, pressure_values, ind, temp_values, VMR_O3,
 OrgData = np.matmul(A_O3 * nonLinA,VMR_O3 * theta_scale_O3).reshape(SpecNumMeas)
 
 
-fig3, ax3 = plt.subplots()
-fig2, ax2 = plt.subplots()
-fig1, ax1 = plt.subplots()
+SetDelta = Parabel(height_values, 30, 1e-7, 0.8e-4)
+SetDelta = np.ones(height_values.size)
+
+TriU = np.tril(np.triu(np.ones((n, n)), k=1), 1) * SetDelta
+TriL = np.triu(np.tril(np.ones((n, n)), k=-1), -1) * SetDelta.T
+Diag = np.eye(n) * np.sum(TriU + TriL, 0)
+
+L_d = -TriU + Diag - TriL
+L_d[0, 0] = 2 * L_d[0, 0]
+L_d[-1, -1] = 2 * L_d[-1, -1]
+
+# fig3, ax3 = plt.subplots()
+# fig2, ax2 = plt.subplots()
+# fig1, ax1 = plt.subplots()
 fig0, ax0 = plt.subplots()
 for i in range(0,numberOfDat):
 
-    tryO3 = np.copy(VMR_O3)
-    tryO3[i] = VMR_O3[i] + 1e-6
+    # tryO3 = np.copy(VMR_O3)
+    # tryO3[i] = VMR_O3[i] + 1e-6
+    #
+    # newO3[:,i] = tryO3.reshape(SpecNumLayers)
+    newO3[:,i] = np.random.multivariate_normal(VMR_O3.reshape(SpecNumLayers), 1e-15*L_d)
 
-    #tryO3[j] = VMR_O3[j] + const[i]
-    newO3[:,i] = tryO3.reshape(SpecNumLayers)
-    #newO3[:,i]= np.random.multivariate_normal(VMR_O3.reshape(SpecNumLayers), 1e-8 * np.eye(SpecNumLayers))
 
     newO3[:, i][newO3[:,i]<0] = 0
     A_O3, theta_scale_O3 = composeAforO3(A_lin, temp_values, pressure_values, ind, scalingConst)
@@ -187,13 +198,13 @@ for i in range(0,numberOfDat):
 
 #DataY[:, i] = DataY[:, i] * (0.1*np.sinc(x) * np.exp(-0.3 * x)).reshape(SpecNumMeas)
 
-    ax1.scatter(DataY[:, i],tang_heights_lin, c='red')
+    #ax1.scatter(DataY[:, i],tang_heights_lin, c='red')
     relErr[:,i] = (DataY[:, i]-nonLinY[:, i])/nonLinY[:, i]
     #ax3.scatter((DataY[:, i]-nonLinY[:, i])/nonLinY[:, i],tang_heights_lin)
 
 
-    ax2.scatter(nonLinY[:, i],tang_heights_lin)
-    #ax0.plot(newO3[:,i],height_values)
+    #ax2.scatter(nonLinY[:, i],tang_heights_lin)
+    ax0.plot(newO3[:,i],height_values)
 
     #construct Jacobian
 #    for j1 in range(0,SpecNumMeas):
@@ -207,9 +218,9 @@ for i in range(0,numberOfDat):
 
 
 
-xNonLin, exitCode = scy.sparse.linalg.gmres(nonLinY, np.zeros(SpecNumMeas))
+#xNonLin, exitCode = scy.sparse.linalg.gmres(nonLinY, np.zeros(SpecNumMeas))
 
-xLin, exitCode = scy.sparse.linalg.gmres(DataY, np.zeros(SpecNumMeas))
+#xLin, exitCode = scy.sparse.linalg.gmres(DataY, np.zeros(SpecNumMeas))
 
 QnonLin, RnonLin = np.linalg.qr(nonLinY, mode = 'complete')
 QLin, RLin = np.linalg.qr(DataY, mode = 'complete')
@@ -219,27 +230,73 @@ print(np.allclose(DataY, np.dot(QLin, RLin)))
 nonLinMap = QnonLin#/sum(QnonLin,0)
 LinMap = QLin#/sum(QLin,0)
 
-ax3.set_title("difference")
+#ax3.set_title("difference")
 #plt.show()
 xtry = np.zeros((SpecNumMeas,1))
 xtry[1] = -1
-fig0, ax0 = plt.subplots()
-ax0.plot(np.matmul(LinMap,xtry),tang_heights_lin)
+# fig0, ax0 = plt.subplots()
+# ax0.plot(np.matmul(LinMap,xtry),tang_heights_lin)
 plt.show()
 
-fig4, ax4 = plt.subplots(14, 1, figsize=(8,15))
-for i in range(0,14):
-    ax4[i].hist(relErr[i, :], bins=50)
+Map = np.zeros((SpecNumMeas,SpecNumMeas))
+MaschMap = np.zeros((SpecNumMeas,SpecNumMeas))
+from sklearn import linear_model
+for i in range(0,SpecNumMeas):
 
 
-fig5, ax5= plt.subplots(14, 1, figsize=(8,15))
-for i in range(19,33):
-    ax5[i-19].hist(relErr[i, :], bins=50)
+    #reg = linear_model.LinearRegression()
+    reg = linear_model.BayesianRidge()
+    reg.fit(nonLinY.T, DataY[i])
+
+    MaschMap[i] = reg.coef_
+    #Map[i] = np.linalg.solve(nonLinY.T, DataY[i])
 
 
 
+plt.close("all")
+
+fig5, ax5 = plt.subplots()
+
+for k in range(0,10):
+    fig4, ax4 = plt.subplots()
+
+    tryO3 = np.copy(VMR_O3)
+    tryO3[i] = VMR_O3[k+5] + 1e-6
+
+    testO3 = tryO3.reshape(SpecNumLayers)
+    #testO3= np.random.multivariate_normal(VMR_O3.reshape(SpecNumLayers), 1e-15*L_d)
+
+    testO3[testO3<0] = 0
+    A_O3, theta_scale_O3 = composeAforO3(A_lin, temp_values, pressure_values, ind, scalingConst)
+    nonLinA = calcNonLin(A_lin, pressure_values, ind, temp_values,   testO3.reshape((SpecNumLayers,1)), AscalConstKmToCm,
+                     SpecNumLayers, SpecNumMeas)
+
+
+
+
+
+    testDataY = np.matmul(A_O3 *2 ,  testO3.reshape((SpecNumLayers,1))  * theta_scale_O3).reshape(SpecNumMeas)
+    testNonLinY= np.matmul(A_O3 * nonLinA,  testO3.reshape((SpecNumLayers,1)) * theta_scale_O3).reshape(SpecNumMeas)
+    ax5.plot(testO3, height_values)
+    #ax4.plot(Map @ testNonLinY,tang_heights_lin)
+    ax4.plot(MaschMap @ testNonLinY, tang_heights_lin, color = "k")
+    ax4.plot(testDataY,tang_heights_lin)
 
 plt.show()
+
+# fig4, ax4 = plt.subplots(14, 1, figsize=(8,15))
+# for i in range(0,14):
+#     ax4[i].hist(relErr[i, :], bins=50)
+#
+#
+# fig5, ax5= plt.subplots(14, 1, figsize=(8,15))
+# for i in range(19,33):
+#     ax5[i-19].hist(relErr[i, :], bins=50)
+#
+#
+#
+#
+# plt.show()
 
 
 print("done")
