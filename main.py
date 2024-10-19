@@ -5,6 +5,9 @@ from functions import *
 from scipy import constants, optimize
 import numpy as np
 import pytwalk
+import torch
+import torch.nn as nn
+import torch.optim as optim
 ''' load data and pick wavenumber/frequency'''
 
 files = '634f1dc4.par' #/home/lennartgolks/Python /Users/lennart/PycharmProjects
@@ -144,7 +147,7 @@ ind = 623
 SNR = 60
 scalingConst = 1e11
 
-numberOfDat = 300#SpecNumLayers
+numberOfDat = 1000# SpecNumMeas
 DataY = np.zeros((SpecNumMeas,numberOfDat))
 relErr = np.zeros((SpecNumMeas,numberOfDat))
 newO3 = np.zeros((SpecNumLayers,numberOfDat))
@@ -181,10 +184,9 @@ for i in range(0,numberOfDat):
     # tryO3[i] = VMR_O3[i] + 1e-6
     #
     # newO3[:,i] = tryO3.reshape(SpecNumLayers)
-    newO3[:,i] = np.random.multivariate_normal(VMR_O3.reshape(SpecNumLayers), 1e-15*L_d)
-
-
+    newO3[:,i] = np.random.multivariate_normal(VMR_O3.reshape(SpecNumLayers), 1e-12*L_d)
     newO3[:, i][newO3[:,i]<0] = 0
+
     A_O3, theta_scale_O3 = composeAforO3(A_lin, temp_values, pressure_values, ind, scalingConst)
     nonLinA = calcNonLin(A_lin, pressure_values, ind, temp_values,   newO3[:,i].reshape((SpecNumLayers,1)), AscalConstKmToCm,
                      SpecNumLayers, SpecNumMeas)
@@ -199,12 +201,65 @@ for i in range(0,numberOfDat):
 #DataY[:, i] = DataY[:, i] * (0.1*np.sinc(x) * np.exp(-0.3 * x)).reshape(SpecNumMeas)
 
     #ax1.scatter(DataY[:, i],tang_heights_lin, c='red')
-    relErr[:,i] = (DataY[:, i]-nonLinY[:, i])/nonLinY[:, i]
+    #relErr[:,i] = (DataY[:, i]-nonLinY[:, i])/nonLinY[:, i]
     #ax3.scatter((DataY[:, i]-nonLinY[:, i])/nonLinY[:, i],tang_heights_lin)
 
 
     #ax2.scatter(nonLinY[:, i],tang_heights_lin)
     ax0.plot(newO3[:,i],height_values)
+    #ax0.set_title('Train Profiles')
+
+plt.show()
+## do machine learing form here
+# normallize data
+nonLinY_norm = ((nonLinY.T - np.mean(nonLinY,1)) / np.std(nonLinY,1)).T
+LinY_norm = ((DataY.T - np.mean(DataY,1)) / np.std(DataY,1)).T
+
+x_tensor = torch.tensor(nonLinY_norm, dtype = torch.float32)
+y_tensor = torch.tensor(LinY_norm, dtype = torch.float32)
+
+class LinearModel(nn.Module):
+    def __init__(self, in_features , out_features):
+        super().__init__()
+        self.linear = nn.Linear(in_features, out_features)
+
+    def forward(self, x):
+        return self.linear(x).squeeze(1)
+
+
+in_features = SpecNumMeas
+out_features =  SpecNumMeas
+
+model = LinearModel(in_features, out_features)
+
+criterion = nn.MSELoss()
+optimizer = optim.SGD(model.parameters(), lr=3)
+
+num_epochs = 100
+
+
+
+for epoch in range(num_epochs):
+
+
+
+    #forward pass
+    outputs = model(x_tensor.T)
+
+    #calculate Los
+    loss = criterion(outputs, y_tensor.T)
+
+    #backwardpass and optimization
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+
+    print(f'Epoch[ {epoch+1} / {num_epochs}], Loss: {loss.item():.4f}')
+
+##
+
+print('Machine Learin done')
+
 
     #construct Jacobian
 #    for j1 in range(0,SpecNumMeas):
@@ -244,8 +299,8 @@ from sklearn import linear_model
 for i in range(0,SpecNumMeas):
 
 
-    #reg = linear_model.LinearRegression()
-    reg = linear_model.BayesianRidge()
+    reg = linear_model.LinearRegression()
+    #reg = linear_model.BayesianRidge()
     reg.fit(nonLinY.T, DataY[i])
 
     MaschMap[i] = reg.coef_
@@ -254,6 +309,10 @@ for i in range(0,SpecNumMeas):
 
 
 plt.close("all")
+
+#np.savetxt('Map.txt', Map,fmt = '%.15f', delimiter= '\t')
+
+Map = np.loadtxt('Map.txt')
 
 fig5, ax5 = plt.subplots()
 
@@ -264,8 +323,8 @@ for k in range(0,10):
     tryO3[i] = VMR_O3[k+5] + 1e-6
 
     testO3 = tryO3.reshape(SpecNumLayers)
-    #testO3= np.random.multivariate_normal(VMR_O3.reshape(SpecNumLayers), 1e-15*L_d)
-
+    #testO3 = np.random.multivariate_normal(VMR_O3.reshape(SpecNumLayers), 1e-15*L_d)
+    #testO3 = VMR_O3
     testO3[testO3<0] = 0
     A_O3, theta_scale_O3 = composeAforO3(A_lin, temp_values, pressure_values, ind, scalingConst)
     nonLinA = calcNonLin(A_lin, pressure_values, ind, temp_values,   testO3.reshape((SpecNumLayers,1)), AscalConstKmToCm,
@@ -277,10 +336,34 @@ for k in range(0,10):
 
     testDataY = np.matmul(A_O3 *2 ,  testO3.reshape((SpecNumLayers,1))  * theta_scale_O3).reshape(SpecNumMeas)
     testNonLinY= np.matmul(A_O3 * nonLinA,  testO3.reshape((SpecNumLayers,1)) * theta_scale_O3).reshape(SpecNumMeas)
+
+    normTestNonLin = (testNonLinY - np.mean(nonLinY, 1)) / np.std(nonLinY, 1)
+
+    normTestNonLin_tensor = torch.tensor(normTestNonLin, dtype = torch.float32).view(1,-1)
+    model.eval()
+
+    with torch.no_grad():
+        normTestOutput = model(normTestNonLin_tensor)
+
+    TorchPredic =  np.array(normTestOutput).reshape(SpecNumMeas) * np.std(DataY, 1) + np.mean(DataY, 1)
+
+
+    noisyNonLinDat, noiseLevel = add_noise(testNonLinY, 60)
+
+    relMapErr = np.linalg.norm(testDataY -  Map @ testNonLinY)/ np.linalg.norm(testDataY) * 100
+    relMaschMapErr = np.linalg.norm(testDataY - MaschMap @ testNonLinY) / np.linalg.norm(testDataY) *100
+    relTorchMapErr = np.linalg.norm(testDataY - TorchPredic) / np.linalg.norm(testDataY) *100
+    relNoiseErr = np.linalg.norm(noisyNonLinDat - testNonLinY)/ np.linalg.norm(testNonLinY) * 100
     ax5.plot(testO3, height_values)
-    #ax4.plot(Map @ testNonLinY,tang_heights_lin)
-    ax4.plot(MaschMap @ testNonLinY, tang_heights_lin, color = "k")
-    ax4.plot(testDataY,tang_heights_lin)
+    ax5.set_title('Test Profiles')
+    ax4.plot(Map @ testNonLinY,tang_heights_lin, label = 'mapped Lin Data, rel Err: '+ str(np.round(relMapErr,3)) + '%')
+    ax4.plot(MaschMap @ testNonLinY, tang_heights_lin, color = "k", label = 'masch mapped Lin Data, rel Err: '+ str(np.round(relMaschMapErr,3)) + '%')
+    ax4.plot(TorchPredic, tang_heights_lin, color="r",label='torch mapped Lin Data, rel Err: ' + str(np.round(relTorchMapErr, 3)) + '%')
+
+    ax4.plot(testDataY,tang_heights_lin, label = 'true Lin Data', marker = 'o',linewidth = 1.5, markersize =7, zorder =0)
+    ax4.plot(noisyNonLinDat, tang_heights_lin, label='Noisy non Lin Data, rel Err: ' + str(np.round(relNoiseErr,3)) + '%' )
+
+    ax4.legend()
 
 plt.show()
 
