@@ -7,7 +7,7 @@ def get_temp_values(height_values):
     now https://www.grc.nasa.gov/www/k-12/airplane/atmosmet.html """
     temp_values = np.zeros(len(height_values))
     #temp_values[0] = 288.15#15 - (height_values[0] - 0) * 6.49 + 273.15
-    ###calculate temp values
+    #calculate temp values
     for i in range(0, len(height_values)):
         if height_values[i] <= 11:
             temp_values[i] = np.around(- height_values[i] * 6.49 + 288.15,2)
@@ -246,5 +246,50 @@ def log_postO3(Params, ATA, ATy, height_values, B_inv_A_trans_y0, VMR_O3, y, A, 
     d0Mean =0.8e-4
     #
     dataVal = - (m / 2 - n / 2) * np.log(gam) - 0.5 * detL + 0.5 * G + 0.5 * gam * F
-    Value =  -400 + dataVal + 0.5 * ((d0 - d0Mean) / (0.75e-5)) ** 2 + 0.5 * ((gam - gamma0) / (gamma0 * 0.01)) ** 2 + 0.5 * ((h1 - hMean) / 1) ** 2 - 2* np.log(a0) + 1e6 * a0
-    return -Value[0]
+    Value =  dataVal + 0.5 * ((d0 - d0Mean) / (0.75e-5)) ** 2 + 0.5 * ((gam - gamma0) / (gamma0 * 0.01)) ** 2 + 0.5 * ((h1 - hMean) / 1) ** 2 - 2* np.log(a0) + 1e6 * a0
+    return Value[0]
+
+def DoMachLearing(num_epochs, nonLinY, DataY):
+    import torch
+    import torch.nn as nn
+    import torch.optim as optim
+    SpecNumMeas , numberOfDat = nonLinY.shape
+    nonLinY_norm = ((nonLinY.T - np.mean(nonLinY, 1)) / np.std(nonLinY, 1)).T
+    LinY_norm = ((DataY.T - np.mean(DataY, 1)) / np.std(DataY, 1)).T
+
+    x_tensor = torch.tensor(nonLinY_norm, dtype=torch.float32)
+    y_tensor = torch.tensor(LinY_norm, dtype=torch.float32)
+
+    class LinearModel(nn.Module):
+        def __init__(self, in_features, out_features):
+            super().__init__()
+            self.linear = nn.Linear(in_features, out_features)
+
+        def forward(self, x):
+            return self.linear(x).squeeze(1)
+
+    in_features = SpecNumMeas
+    out_features = SpecNumMeas
+
+    model = LinearModel(in_features, out_features)
+
+    criterion = nn.MSELoss()
+    optimizer = optim.SGD(model.parameters(), lr=3)
+
+
+
+    for epoch in range(num_epochs):
+        # forward pass
+        outputs = model(x_tensor.T)
+
+        # calculate Los
+        loss = criterion(outputs, y_tensor.T)
+
+        # backwardpass and optimization
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        print(f'Epoch[ {epoch + 1} / {num_epochs}], Loss: {loss.item():.4f}')
+
+    return model
