@@ -147,7 +147,7 @@ ind = 623
 SNR = 60
 scalingConst = 1e11
 
-numberOfDat = 1000# SpecNumMeas
+numberOfDat = SpecNumMeas
 DataY = np.zeros((SpecNumMeas,numberOfDat))
 relErr = np.zeros((SpecNumMeas,numberOfDat))
 newO3 = np.zeros((SpecNumLayers,numberOfDat))
@@ -216,7 +216,7 @@ plt.show()
 
 ##
 num_epochs = 100
-#model = DoMachLearing(num_epochs, nonLinY, DataY)
+model = DoMachLearing(num_epochs, nonLinY, DataY)
 
 print('Machine Learning done')
 
@@ -256,7 +256,7 @@ for i in range(0,SpecNumMeas):
     reg.fit(nonLinY.T, DataY[i])
 
     MaschMap[i] = reg.coef_
-    #Map[i] = np.linalg.solve(nonLinY.T, DataY[i])
+    Map[i] = np.linalg.solve(nonLinY.T, DataY[i])
 
 
 
@@ -275,7 +275,7 @@ for k in range(0,1):
     tryO3[i] = VMR_O3[k+5] + 1e-6
 
     testO3 = tryO3.reshape(SpecNumLayers)
-    #testO3 = np.random.multivariate_normal(VMR_O3.reshape(SpecNumLayers), 1e-15*L_d)
+    testO3 = np.random.multivariate_normal(VMR_O3.reshape(SpecNumLayers), 1e-13*L_d)
     #testO3 = VMR_O3
     testO3[testO3<0] = 0
     A_O3, theta_scale_O3 = composeAforO3(A_lin, temp_values, pressure_values, ind, scalingConst)
@@ -293,12 +293,12 @@ for k in range(0,1):
 
     normTestNonLin_tensor = torch.tensor(normTestNonLin, dtype = torch.float32).view(1,-1)
 
-    # model.eval()
-    # with torch.no_grad():
-    #     normTestOutput = model(normTestNonLin_tensor)
-    # TorchPredic =  np.array(normTestOutput).reshape(SpecNumMeas) * np.std(DataY, 1) + np.mean(DataY, 1)
-    # relTorchMapErr = np.linalg.norm(testDataY - TorchPredic) / np.linalg.norm(testDataY) *100
-    # ax4.plot(TorchPredic, tang_heights_lin, color="r",label='torch mapped Lin Data, rel Err: ' + str(np.round(relTorchMapErr, 3)) + '%')
+    model.eval()
+    with torch.no_grad():
+        normTestOutput = model(normTestNonLin_tensor)
+    TorchPredic =  np.array(normTestOutput).reshape(SpecNumMeas) * np.std(DataY, 1) + np.mean(DataY, 1)
+    relTorchMapErr = np.linalg.norm(testDataY - TorchPredic) / np.linalg.norm(testDataY) *100
+    ax4.plot(TorchPredic, tang_heights_lin, color="r",label='torch mapped Lin Data, rel Err: ' + str(np.round(relTorchMapErr, 3)) + '%')
 
     noisyNonLinDat, noiseLevel = add_noise(testNonLinY, 60)
 
@@ -319,71 +319,60 @@ for k in range(0,1):
 plt.show()
 
 
+## try to match nonLinData and linData zu Noisy Data
+noise = np.random.normal(0, np.sqrt(1/noiseLevel), testNonLinY.shape)
+relNoisLinErr = np.linalg.norm(noisyNonLinDat - (testDataY + noise)) / np.linalg.norm(noisyNonLinDat) * 100
+relNoisNonLinErr = np.linalg.norm(noisyNonLinDat - (testNonLinY + noise)) / np.linalg.norm(noisyNonLinDat) * 100
+
+fig4, ax4 = plt.subplots()
+ax4.plot(testDataY + noise,tang_heights_lin, label = 'true Lin Data plus noise, rel Err: ' + str(np.round(relNoisLinErr,3)) + '%', marker = 'o',linewidth = 1.5, markersize =7, zorder =0)
+ax4.plot(testNonLinY + noise,tang_heights_lin, label = 'true non Lin Data plus noise, rel Err: ' + str(np.round(relNoisNonLinErr,3)) + '%', marker = 'o',linewidth = 1.5, markersize =7, zorder =0)
+ax4.plot(noisyNonLinDat, tang_heights_lin, label='Noisy non Lin Data, rel Err: ' + str(np.round(relNoiseErr,3)) + '%' , marker = 'o')
+ax4.legend()
+
+plt.show()
+
+while relNoisLinErr > 20 or relNoisNonLinErr > 20:
+    noise = np.random.normal(0, np.sqrt(1 / noiseLevel), testNonLinY.shape)
+    relNoisLinErr = np.linalg.norm(noisyNonLinDat - (testDataY + noise)) / np.linalg.norm(noisyNonLinDat) * 100
+    relNoisNonLinErr = np.linalg.norm(noisyNonLinDat - (testNonLinY + noise)) / np.linalg.norm(noisyNonLinDat) * 100
+    fig4, ax4 = plt.subplots()
+    ax4.plot(testDataY + noise,tang_heights_lin, label = 'true Lin Data plus noise, rel Err: ' + str(np.round(relNoisLinErr,3)) + '%', marker = 'o',linewidth = 1.5, markersize =7, zorder =0)
+    ax4.plot(testNonLinY + noise,tang_heights_lin, label = 'true non Lin Data plus noise, rel Err: ' + str(np.round(relNoisNonLinErr,3)) + '%', marker = 'o',linewidth = 1.5, markersize =7, zorder =0)
+    ax4.plot(noisyNonLinDat, tang_heights_lin, label='Noisy non Lin Data, rel Err: ' + str(np.round(relNoiseErr,3)) + '%' , marker = 'o')
+    ax4.legend()
+
+    plt.show()
+
+
+
 
 print("done")
 ##
 # samplig non linear
-tol = 1e-8
-SampleRounds = 30
-tWalkSampNum = 5000
-burnIn = 500
-deltRes = np.zeros((SampleRounds, 3))
-gamRes = np.zeros(SampleRounds)
-Results = np.zeros((SampleRounds, SpecNumLayers))
-A = A_O3 * nonLinA
-Ax = np.matmul(A, VMR_O3 * theta_scale_O3)
-y, gamma0 = add_noise(Ax, 60)
+SampleRounds = 100
+numDatSet = SpecNumMeas
+deltRes = np.zeros((numDatSet,SampleRounds, 3))
+gamRes = np.zeros((numDatSet,SampleRounds))
+Results = np.zeros((numDatSet,SampleRounds, SpecNumLayers))
+DataSet = np.zeros((numDatSet,SpecNumMeas))
+for testSet in range(numDatSet):
+    tol = 1e-8
 
-gamRes[0] = gamma0
-Results[0] = VMR_O3.reshape(SpecNumLayers)
-deltRes[0] = np.array([30, 1e-7, 0.8e-4])
-SetDelta = Parabel(height_values, *deltRes[0])
-
-
-TriU = np.tril(np.triu(np.ones((n, n)), k=1), 1) * SetDelta
-TriL = np.triu(np.tril(np.ones((n, n)), k=-1), -1) * SetDelta.T
-Diag = np.eye(n) * np.sum(TriU + TriL, 0)
-
-L_d = -TriU + Diag - TriL
-L_d[0, 0] = 2 * L_d[0, 0]
-L_d[-1, -1] = 2 * L_d[-1, -1]
-
-
-
-
-
-def MargPostSupp(Params):
-    list = []
-    list.append(Params[0] > 0)
-    list.append(height_values[-1] > Params[1] > height_values[0])
-    list.append(Params[2] > 0)
-    list.append( Params[3] > 0)
-    return all(list)
-
-for samp in range(1,SampleRounds):
-
+    tWalkSampNum = 5000
+    burnIn = 500
+    #deltRes[testSet] = np.zeros((SampleRounds, 3))
+    #gamRes[testSet] = np.zeros(SampleRounds)
+    #Results[testSet] = np.zeros((SampleRounds, SpecNumLayers))
     A = A_O3 * nonLinA
+    Ax = np.matmul(A, VMR_O3 * theta_scale_O3)
+    y , gamma0 = add_noise(Ax, 60)
+    DataSet[testSet] = y.reshape(SpecNumMeas)
+    gamRes[testSet][0] = gamma0
+    Results[testSet][0] = VMR_O3.reshape(SpecNumLayers)
+    deltRes[testSet][0] = np.array([30, 1e-7, 0.8e-4])
+    SetDelta = Parabel(height_values, *deltRes[testSet][0])
 
-    ATy = np.matmul(A.T, y)
-    ATA = np.matmul(A.T, A)
-
-    B0 = (ATA + 1 / gamRes[0] * L_d)
-    B_inv_A_trans_y0, exitCode = scy.sparse.linalg.gmres(B0, ATy[:, 0], rtol=tol, restart=25)
-    if exitCode != 0:
-        print(exitCode)
-
-    log_post = lambda Params : log_postO3(Params, ATA, ATy, height_values, B_inv_A_trans_y0, Results[samp-1, :].reshape((SpecNumLayers,1)), y, A, gamma0)
-    MargPost = pytwalk.pytwalk(n=4, U=log_post, Supp=MargPostSupp)
-    x0 = np.array([gamRes[samp-1], *deltRes[samp-1, :]])
-    xp0 = 1.0001 * x0
-    startTime = time.time()
-    MargPost.Run(T=tWalkSampNum + burnIn, x0=x0, xp0=xp0)
-    print('time elapsed:' + str(time.time() - startTime))
-    Samps = MargPost.Output
-
-    MWGRand = burnIn + np.random.randint(low=0, high=tWalkSampNum)
-    SetGamma = Samps[MWGRand, 0]
-    SetDelta = Parabel(height_values, *Samps[MWGRand, 1:-1])
 
     TriU = np.tril(np.triu(np.ones((n, n)), k=1), 1) * SetDelta
     TriL = np.triu(np.tril(np.ones((n, n)), k=-1), -1) * SetDelta.T
@@ -392,37 +381,154 @@ for samp in range(1,SampleRounds):
     L_d = -TriU + Diag - TriL
     L_d[0, 0] = 2 * L_d[0, 0]
     L_d[-1, -1] = 2 * L_d[-1, -1]
-    SetB = SetGamma * ATA +  L_d
 
-    W = np.random.multivariate_normal(np.zeros(len(A)), np.eye(len(A)))
-    v_1 = np.sqrt(SetGamma) * A.T @ W.reshape((m, 1))
-    W2 = np.random.multivariate_normal(np.zeros(len(L_d)), L_d)
-    v_2 = W2.reshape((n, 1))
 
-    RandX = (SetGamma * ATy + v_1 + v_2)
-    O3_Prof, exitCode = scy.sparse.linalg.gmres(SetB, RandX[0::, 0], rtol=tol)
-    Results[samp, :] = O3_Prof/ theta_scale_O3
-    deltRes[samp, :] = np.array([Samps[MWGRand, 1:-1]])
-    gamRes[samp] = SetGamma
 
-    # print(np.mean(O3_Prof))
 
-    nonLinA = calcNonLin(A_lin, pressure_values, ind, temp_values, Results[samp, :].reshape((SpecNumLayers,1)), AscalConstKmToCm,
-                     SpecNumLayers, SpecNumMeas)
+
+    def MargPostSupp(Params):
+        list = []
+        list.append(Params[0] > 0)
+        list.append(height_values[-1] > Params[1] > height_values[0])
+        list.append(Params[2] > 0)
+        list.append( Params[3] > 0)
+        return all(list)
+
+    for samp in range(1,SampleRounds):
+
+        A = A_O3 * nonLinA
+
+        ATy = np.matmul(A.T, y)
+        ATA = np.matmul(A.T, A)
+
+        B0 = (ATA + 1 / gamRes[testSet][0] * L_d)
+        B_inv_A_trans_y0, exitCode = scy.sparse.linalg.gmres(B0, ATy[:, 0], rtol=tol, restart=25)
+        if exitCode != 0:
+            print(exitCode)
+
+        log_post = lambda Params : log_postO3(Params, ATA, ATy, height_values, B_inv_A_trans_y0, Results[testSet][samp-1, :].reshape((SpecNumLayers,1)), y, A, gamma0)
+        MargPost = pytwalk.pytwalk(n=4, U=log_post, Supp=MargPostSupp)
+        x0 = np.array([gamRes[testSet][samp-1], *deltRes[testSet][samp-1, :]])
+        xp0 = 1.0001 * x0
+        startTime = time.time()
+        MargPost.Run(T=tWalkSampNum + burnIn, x0=x0, xp0=xp0)
+        print('time elapsed:' + str(time.time() - startTime))
+        Samps = MargPost.Output
+
+        MWGRand = burnIn + np.random.randint(low=0, high=tWalkSampNum)
+        SetGamma = Samps[MWGRand, 0]
+        SetDelta = Parabel(height_values, *Samps[MWGRand, 1:-1])
+
+        TriU = np.tril(np.triu(np.ones((n, n)), k=1), 1) * SetDelta
+        TriL = np.triu(np.tril(np.ones((n, n)), k=-1), -1) * SetDelta.T
+        Diag = np.eye(n) * np.sum(TriU + TriL, 0)
+
+        L_d = -TriU + Diag - TriL
+        L_d[0, 0] = 2 * L_d[0, 0]
+        L_d[-1, -1] = 2 * L_d[-1, -1]
+        SetB = SetGamma * ATA +  L_d
+
+        W = np.random.multivariate_normal(np.zeros(len(A)), np.eye(len(A)))
+        v_1 = np.sqrt(SetGamma) * A.T @ W.reshape((m, 1))
+        W2 = np.random.multivariate_normal(np.zeros(len(L_d)), L_d)
+        v_2 = W2.reshape((n, 1))
+
+        RandX = (SetGamma * ATy + v_1 + v_2)
+        O3_Prof, exitCode = scy.sparse.linalg.gmres(SetB, RandX[0::, 0], rtol=tol)
+        Results[testSet][samp, :] = O3_Prof/ theta_scale_O3
+        deltRes[testSet][samp, :] = np.array([Samps[MWGRand, 1:-1]])
+        gamRes[testSet][samp] = SetGamma
+
+        # print(np.mean(O3_Prof))
+
+        nonLinA = calcNonLin(A_lin, pressure_values, ind, temp_values, Results[testSet][samp, :].reshape((SpecNumLayers,1)), AscalConstKmToCm,
+                         SpecNumLayers, SpecNumMeas)
+
+    np.savetxt(f'Res{testSet}.txt', Results[testSet],fmt = '%.15f', delimiter= '\t')
+
 
 ResCol = "#1E88E5"
 fig4, ax4 = plt.subplots()
 for r in range(0,SampleRounds):
-    Sol = Results[r, :]
+    Sol = Results[testSet][r, :]
 
     ax4.plot(Sol,height_values,marker= '+',color = ResCol, zorder = 0, linewidth = 0.5, markersize = 5, alpha = 0.3)
 
 plt.show()
 
 print('done')
+## use O3 profiles to make up lin and nonLin data and use for mapping
+A_O3, theta_scale_O3 = composeAforO3(A_lin, temp_values, pressure_values, ind, scalingConst)
+
+Results = np.zeros((numDatSet,SampleRounds, SpecNumLayers))
+LinDataY = np.zeros((numDatSet,SpecNumMeas))
+NonLinDataY = np.zeros((numDatSet,SpecNumMeas))
+for testSet in range(numDatSet):
+    ProfRand = np.random.randint(low=0, high=SampleRounds)
+    Results[testSet] = np.loadtxt(f'Res{testSet}.txt')
+
+
+    O3_Prof = Results[testSet][ProfRand]
+
+    nonLinA = calcNonLin(A_lin, pressure_values, ind, temp_values,
+                         Results[testSet][ProfRand, :].reshape((SpecNumLayers, 1)), AscalConstKmToCm,
+                         SpecNumLayers, SpecNumMeas)
+
+    LinDataY[testSet] = np.matmul(A_O3 * 2, O3_Prof.reshape((SpecNumLayers, 1)) * theta_scale_O3).reshape(SpecNumMeas)
+    NonLinDataY[testSet] = np.matmul(A_O3 * nonLinA, O3_Prof.reshape((SpecNumLayers, 1)) * theta_scale_O3).reshape(SpecNumMeas)
+
+
+RealMap = np.zeros((SpecNumMeas,SpecNumMeas))
+
+for i in range(0,SpecNumMeas):
+    RealMap[i] = np.linalg.solve(NonLinDataY.T, LinDataY[i])
+
+
+
+#test Real Map
+
+
+fig5, ax5 = plt.subplots()
+
+for k in range(0,1):
+    fig4, ax4 = plt.subplots()
+
+    tryO3 = np.copy(VMR_O3)
+    tryO3[i] = VMR_O3[k+5] + 1e-6
+
+    testO3 = tryO3.reshape(SpecNumLayers)
+    testO3 = np.random.multivariate_normal(VMR_O3.reshape(SpecNumLayers), 1e-13*L_d)
+    #testO3 = VMR_O3
+    testO3[testO3<0] = 0
+    nonLinA = calcNonLin(A_lin, pressure_values, ind, temp_values,   testO3.reshape((SpecNumLayers,1)), AscalConstKmToCm,
+                     SpecNumLayers, SpecNumMeas)
+
+
+
+
+    testDataY = np.matmul(A_O3 *2 ,  testO3.reshape((SpecNumLayers,1))  * theta_scale_O3).reshape(SpecNumMeas)
+    testNonLinY= np.matmul(A_O3 * nonLinA,  testO3.reshape((SpecNumLayers,1)) * theta_scale_O3).reshape(SpecNumMeas)
+
+    normTestNonLin = (testNonLinY - np.mean(nonLinY, 1)) / np.std(nonLinY, 1)
+
+    noisyNonLinDat, noiseLevel = add_noise(testNonLinY, 60)
+
+    relMapErr = np.linalg.norm(testDataY -  RealMap @ testNonLinY)/ np.linalg.norm(testDataY) * 100
+
+    relNoiseErr = np.linalg.norm(noisyNonLinDat - testNonLinY)/ np.linalg.norm(testNonLinY) * 100
+    ax5.plot(testO3, height_values)
+    ax5.set_title('Test Profiles')
+    ax4.plot(RealMap @ testNonLinY,tang_heights_lin, label = 'mapped Lin Data, rel Err: '+ str(np.round(relMapErr,3)) + '%')
+
+    ax4.plot(testDataY,tang_heights_lin, label = 'true Lin Data', marker = 'o',linewidth = 1.5, markersize =7, zorder =0)
+    ax4.plot(noisyNonLinDat, tang_heights_lin, label='Noisy non Lin Data, rel Err: ' + str(np.round(relNoiseErr,3)) + '%' )
+
+    ax4.legend()
+
+plt.show()
+
+
 ##
-
-
 
 #
 # Samps = MargPost.Output
