@@ -254,6 +254,7 @@ def DoMachLearing(num_epochs, nonLinY, DataY):
     import torch.nn as nn
     import torch.optim as optim
     SpecNumMeas , numberOfDat = nonLinY.shape
+    print(nonLinY.shape)
     nonLinY_norm = ((nonLinY.T - np.mean(nonLinY, 1)) / np.std(nonLinY, 1)).T
     LinY_norm = ((DataY.T - np.mean(DataY, 1)) / np.std(DataY, 1)).T
 
@@ -274,7 +275,7 @@ def DoMachLearing(num_epochs, nonLinY, DataY):
     model = LinearModel(in_features, out_features)
 
     criterion = nn.MSELoss()
-    optimizer = optim.SGD(model.parameters(), lr=3)
+    optimizer = optim.SGD(model.parameters(), lr=1)
 
 
 
