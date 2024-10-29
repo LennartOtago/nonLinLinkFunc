@@ -277,9 +277,28 @@ def DoMachLearing(num_epochs, nonLinY, DataY):
     criterion = nn.MSELoss()
     optimizer = optim.SGD(model.parameters(), lr=1)
 
+    outputs = model(x_tensor.T)
+    # calculate Los
+    loss = criterion(outputs, y_tensor.T)
 
+    # backwardpass and optimization
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+    prevLoss = np.round(loss.item(),4)
 
-    for epoch in range(num_epochs):
+    outputs = model(x_tensor.T)
+    # calculate Los
+    loss = criterion(outputs, y_tensor.T)
+
+    # backwardpass and optimization
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+    currLoss = np.round(loss.item(),4)
+    epoch = 1
+    #for epoch in range(num_epochs):
+    while prevLoss > currLoss:
         # forward pass
         outputs = model(x_tensor.T)
 
@@ -290,7 +309,93 @@ def DoMachLearing(num_epochs, nonLinY, DataY):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+        prevLoss = np.copy(currLoss)
+        currLoss = np.round(loss.item(),4)
+        epoch += 1
 
-        print(f'Epoch[ {epoch + 1} / {num_epochs}], Loss: {loss.item():.4f}')
+        print(f'Epoch[ {epoch + 1}], Loss: {loss.item():.4f}')
 
     return model
+
+
+def LinModelSolve(NonLinDataY, LinDataY, SpecNumMeas):
+    RealMap = None
+    while RealMap is None:
+        try:
+
+            RealMap = np.zeros((SpecNumMeas, SpecNumMeas))
+
+            for i in range(0, SpecNumMeas):
+                RealMap[i] = np.linalg.solve(NonLinDataY, LinDataY[:, i])
+
+        except np.linalg.LinAlgError:
+            RealMap = None
+            print('pass')
+            pass
+
+    return RealMap
+
+def testSolvedMap(RealMap, gamma0, testNum, SpecNumMeas, testNonLinY, testDataY):
+    relMapErr = np.zeros(testNum)
+    for k in range(0, testNum):
+
+        noise = np.random.multivariate_normal(np.zeros(SpecNumMeas), np.sqrt(1 / gamma0) * np.eye(SpecNumMeas))
+
+        mappedDat = RealMap @ (testNonLinY[k] + noise)
+        relMapErr[k] = np.linalg.norm((testDataY[k] + noise) - mappedDat) / np.linalg.norm((testDataY[k] + noise)) * 100
+
+
+    return relMapErr
+
+def genDataFindandtestMap(currMap, L_d, gamma0, VMR_O3, Results, AscalConstKmToCm, A_lin, temp_values, pressure_values, ind, scalingConst,SampleRounds):
+    SpecNumMeas, SpecNumLayers = A_lin.shape
+    relMapErr = 1
+    while np.mean(relMapErr) >= 1:
+        testDat = SpecNumMeas
+        A_O3, theta_scale_O3 = composeAforO3(A_lin, temp_values, pressure_values, ind, scalingConst)
+
+        # Results = np.zeros((SampleRounds, SpecNumLayers))
+        LinDataY = np.zeros((testDat, SpecNumMeas))
+        NonLinDataY = np.zeros((testDat, SpecNumMeas))
+        for test in range(testDat):
+            ProfRand = np.random.randint(low=0, high=SampleRounds)
+            # Results = np.loadtxt(f'Res{testSet}.txt')
+
+            O3_Prof = Results[ProfRand]
+            O3_Prof[O3_Prof < 0] = 0
+            nonLinA = calcNonLin(A_lin, pressure_values, ind, temp_values,
+                                 O3_Prof.reshape((SpecNumLayers, 1)), AscalConstKmToCm,
+                                 SpecNumLayers, SpecNumMeas)
+            noise = np.random.normal(0, np.sqrt(1 / gamma0), SpecNumMeas)
+            # noise = np.zeros(SpecNumMeas)
+
+            LinDataY[test] = np.matmul(A_O3 * 2, O3_Prof.reshape((SpecNumLayers, 1)) * theta_scale_O3).reshape(
+                SpecNumMeas) + noise
+            NonLinDataY[test] = np.matmul(A_O3 * nonLinA,
+                                          O3_Prof.reshape((SpecNumLayers, 1)) * theta_scale_O3).reshape(
+                SpecNumMeas) + noise
+            #currMap = np.eye(SpecNumMeas)
+            NonLinDataY[test] = currMap @ NonLinDataY[test]
+        RealMap = LinModelSolve(NonLinDataY, LinDataY, SpecNumMeas)
+
+        testNum = 100
+        testO3 = np.random.multivariate_normal(VMR_O3.reshape(SpecNumLayers), 1e-12 * L_d, size=testNum)
+        testO3[testO3 < 0] = 0
+        testDataY = np.zeros((testNum, SpecNumMeas))
+        testNonLinY = np.zeros((testNum, SpecNumMeas))
+
+        for k in range(0, testNum):
+            currO3 = testO3[k]
+            nonLinA = calcNonLin(A_lin, pressure_values, ind, temp_values, currO3.reshape((SpecNumLayers, 1)),
+                                 AscalConstKmToCm,
+                                 SpecNumLayers, SpecNumMeas)
+
+            testDataY[k] = np.matmul(A_O3 * 2, currO3.reshape((SpecNumLayers, 1)) * theta_scale_O3).reshape(SpecNumMeas)
+            testNonLinY[k] = np.matmul(A_O3 * nonLinA, currO3.reshape((SpecNumLayers, 1)) * theta_scale_O3).reshape(
+                SpecNumMeas)
+            testNonLinY[k] = currMap @ testNonLinY[k]
+
+        relMapErr = testSolvedMap(RealMap, gamma0, testNum, SpecNumMeas, testNonLinY, testDataY)
+
+    return RealMap, relMapErr, LinDataY, NonLinDataY
+# def testMachMap(Map):
