@@ -399,7 +399,7 @@ while meanErr >= np.copy(lowBoundErr):
     #     #need to update to old Results
     #     break
     oldMeanErr = np.copy(meanErr)
-    currMap = np.copy(RealMap)
+    #currMap = np.copy(RealMap)
     RealMap, relMapErr, LinDataY, NonLinDataY = genDataFindandtestMap(currMap, L_d, gamma0, VMR_O3, Results, AscalConstKmToCm, A_lin, temp_values,  pressure_values, ind, scalingConst, SampleRounds)
 
 
