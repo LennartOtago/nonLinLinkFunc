@@ -244,7 +244,8 @@ def log_postO3(Params, ATA, ATy, height_values, B_inv_A_trans_y0, VMR_O3, y, A, 
     hMean = height_values[VMR_O3[:] == np.max(VMR_O3[:])]
 
     d0Mean =0.8e-4
-    #
+
+
     dataVal = - (m / 2 - n / 2) * np.log(gam) - 0.5 * detL + 0.5 * G + 0.5 * gam * F
     Value =  dataVal + 0.5 * ((d0 - d0Mean) / (0.75e-5)) ** 2 + 0.5 * ((gam - gamma0) / (gamma0 * 0.01)) ** 2 + 0.5 * ((h1 - hMean) / 1) ** 2 - 2* np.log(a0) + 1e6 * a0
     return Value[0]
@@ -399,3 +400,38 @@ def genDataFindandtestMap(currMap, L_d, gamma0, VMR_O3, Results, AscalConstKmToC
 
     return RealMap, relMapErr, LinDataY, NonLinDataY
 # def testMachMap(Map):
+
+
+def set_size(width, fraction=1):
+    """Set figure dimensions to avoid scaling in LaTeX.
+
+    Parameters
+    ----------
+    width: float
+            Document textwidth or columnwidth in pts
+    fraction: float, optional
+            Fraction of the width which you wish the figure to occupy
+
+    Returns
+    -------
+    fig_dim: tuple
+            Dimensions of figure in inches
+    """
+    # Width of figure (in pts)
+    fig_width_pt = width * fraction
+
+    # Convert from pt to inches
+    inches_per_pt = 1 / 72.27
+
+    # Golden ratio to set aesthetic figure height
+    # https://disq.us/p/2940ij3
+    golden_ratio = 1#(5**.5 - 1) / 2
+
+    # Figure width in inches
+    fig_width_in = fig_width_pt * inches_per_pt
+    # Figure height in inches
+    fig_height_in = fig_width_in * golden_ratio
+
+    fig_dim = (fig_width_in, fig_height_in)
+
+    return fig_dim

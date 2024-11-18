@@ -1,13 +1,27 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 from functions import *
 from scipy import constants, optimize
 import numpy as np
 import pytwalk
 import torch
 import time
-
+""" for plotting figures,
+PgWidth in points, either collumn width page with of Latex"""
+fraction = 1.5
+dpi = 300
+PgWidthPt = 245
+PgWidthPt =  fraction * 421/2 #phd
+defBack = mpl.get_backend()
+mpl.use(defBack)
+mpl.rcParams.update(mpl.rcParamsDefault)
+plt.rcParams.update({'font.size': fraction * 12,
+                     'text.usetex': True,
+                     'font.family' : 'serif',
+                     'font.serif'  : 'cm',
+                     'text.latex.preamble': r'\usepackage{bm, amsmath}'})
 ''' load data and pick wavenumber/frequency'''
 
 files = '634f1dc4.par' #/home/lennartgolks/Python /Users/lennart/PycharmProjects
@@ -144,7 +158,7 @@ np.savetxt('tang_heights_lin.txt',tang_heights_lin, fmt = '%.15f', delimiter= '\
 
 AscalConstKmToCm = 1e3
 ind = 623
-SNR = 50
+SNR = 60
 scalingConst = 1e11
 
 numberOfDat = SpecNumMeas
@@ -161,7 +175,7 @@ nonLinA = calcNonLin(A_lin, pressure_values, ind, temp_values, VMR_O3,
                      AscalConstKmToCm,
                      SpecNumLayers, SpecNumMeas)
 OrgData = np.matmul(A_O3 * nonLinA,VMR_O3 * theta_scale_O3)
-
+# OrgData = np.matmul(A_O3 * 2,VMR_O3 * theta_scale_O3)
 ##
 # samplig  linear
 SampleRounds = 100
@@ -177,7 +191,11 @@ tWalkSampNum = 7500
 burnIn = 500
 
 y , gamma0 = add_noise(OrgData, SNR)
+# y = np.loadtxt('/home/lennartgolks/PycharmProjects/firstModelCheckPhD/dataY.txt').reshape((SpecNumMeas,1))
+# gamma = np.loadtxt('/home/lennartgolks/PycharmProjects/firstModelCheckPhD/gamma0.txt')
+
 DataSet = y.reshape(SpecNumMeas)
+
 gamRes[0] = gamma0
 Results[0] = VMR_O3.reshape(SpecNumLayers)
 deltRes[0] = np.array([30, 1e-7, 0.8e-4])
@@ -258,7 +276,7 @@ for samp in range(1,SampleRounds):
 ##
 oldMean = np.mean(Results, 0)
 ResCol = "#1E88E5"
-fig4, ax4 = plt.subplots()
+fig4, ax4 = plt.subplots(figsize=set_size(PgWidthPt, fraction=fraction))
 for r in range(0,SampleRounds):
     Sol = Results[r, :]
 
@@ -381,7 +399,7 @@ while meanErr >= np.copy(lowBoundErr):
 
     newMean = np.mean(Results, 0)
 
-    fig4, ax4 = plt.subplots()
+    fig4, ax4 = plt.subplots(figsize=set_size(PgWidthPt, fraction=fraction))
     for r in range(0, SampleRounds):
         Sol = Results[r, :]
 
@@ -402,19 +420,42 @@ while meanErr >= np.copy(lowBoundErr):
     #currMap = np.copy(RealMap)
     RealMap, relMapErr, LinDataY, NonLinDataY = genDataFindandtestMap(currMap, L_d, gamma0, VMR_O3, Results, AscalConstKmToCm, A_lin, temp_values,  pressure_values, ind, scalingConst, SampleRounds)
 
-
-
-
+##
+DatCol =  'gray'
 ResCol = "#1E88E5"
-fig4, ax4 = plt.subplots()
+TrueCol = [50/255,220/255, 0/255]
+fig4, ax4 = plt.subplots(figsize=set_size(PgWidthPt, fraction=fraction))
+line3 = ax4.scatter(y, tang_heights_lin, label  = r'data $\bm{y}$', zorder = 0, marker = '*', color =DatCol )#,linewidth = 5
+
+ax1 = ax4.twiny()
 for r in range(0, SampleRounds):
     Sol = Results[r, :]
 
-    ax4.plot(Sol, height_values, marker='+', color=ResCol, zorder=0, linewidth=0.5, markersize=5, alpha=0.3)
+    ax1.plot(Sol, height_values, marker='+', color=ResCol, zorder=0, linewidth=0.5, markersize=5, label = r'$\bm{x} \sim \pi(\bm{x}|\bm{y}, \bm{\theta})$')# alpha=0.3,
 
-ax4.plot(oldMean, height_values, marker='o', color='r')
-ax4.plot(newMean, height_values, marker='o', color='k')
-ax4.plot(VMR_O3, height_values, marker='o', color='g')
+ax1.plot(oldMean, height_values, marker='>', color='r',markersize = 10, label =r'previous sample  mean')
+ax1.plot(newMean, height_values, marker='>', color='k', label =r'final sample mean')
+ax1.plot(VMR_O3, height_values, marker='o', color= TrueCol,markersize = 10, label =r'true $\bm{x}$', zorder = 1)
+
+ax1.set_xlabel(r'ozone volume mixing ratio ')
+
+ax4.set_ylabel('(tangent) height in km')
+handles, labels = ax1.get_legend_handles_labels()
+handles2, labels2 = ax4.get_legend_handles_labels()
+ax1.set_ylim([heights[minInd], heights[maxInd-1]])
+ax4.set_xlabel(r'spectral radiance in $\frac{\text{W} \text{cm}}{\text{m}^2 \text{sr}} $',labelpad=10)# color =dataCol,
+
+ax4.tick_params(colors = DatCol, axis = 'x')
+ax4.xaxis.set_ticks_position('top')
+ax4.xaxis.set_label_position('top')
+ax1.xaxis.set_ticks_position('bottom')
+ax1.xaxis.set_label_position('bottom')
+ax1.spines[:].set_visible(False)
+#ax2.spines['top'].set_color(pyTCol)
+
+legend = ax1.legend(handles = [handles[-3], handles[-2],handles[-1],handles2[0], handles[0]])# loc='lower right', framealpha = 0.2,fancybox=True)#, bbox_to_anchor=(1.01, 1.01), frameon =True)
+
+plt.savefig('LinkFuncO3Res.svg')
 plt.show()
 print('done')
 
