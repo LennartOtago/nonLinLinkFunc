@@ -327,7 +327,7 @@ def LinModelSolve(NonLinDataY, LinDataY, SpecNumMeas):
             RealMap = np.zeros((SpecNumMeas, SpecNumMeas))
 
             for i in range(0, SpecNumMeas):
-                RealMap[i] = np.linalg.solve(NonLinDataY, LinDataY[:, i])
+                RealMap[i] = np.linalg.solve(LinDataY, NonLinDataY[:, i])
 
         except np.linalg.LinAlgError:
             RealMap = None
@@ -377,7 +377,7 @@ def genDataFindandtestMap(currMap, L_d, gamma0, VMR_O3, Results, AscalConstKmToC
                 SpecNumMeas) + noise
             #currMap = np.eye(SpecNumMeas)
             NonLinDataY[test] = currMap @ NonLinDataY[test]
-        RealMap = LinModelSolve(NonLinDataY, LinDataY, SpecNumMeas)
+        RealMap = LinModelSolve(LinDataY, NonLinDataY, SpecNumMeas)
 
         testNum = 100
         testO3 = np.random.multivariate_normal(VMR_O3.reshape(SpecNumLayers), 1e-12 * L_d, size=testNum)
@@ -398,7 +398,7 @@ def genDataFindandtestMap(currMap, L_d, gamma0, VMR_O3, Results, AscalConstKmToC
 
         relMapErr = testSolvedMap(RealMap, gamma0, testNum, SpecNumMeas, testNonLinY, testDataY)
 
-    return RealMap, relMapErr, LinDataY, NonLinDataY
+    return RealMap @ currMap, relMapErr, LinDataY, NonLinDataY
 # def testMachMap(Map):
 
 

@@ -191,11 +191,28 @@ tWalkSampNum = 7500
 burnIn = 500
 
 y , gamma0 = add_noise(OrgData, SNR)
-# y = np.loadtxt('/home/lennartgolks/PycharmProjects/firstModelCheckPhD/dataY.txt').reshape((SpecNumMeas,1))
-# gamma = np.loadtxt('/home/lennartgolks/PycharmProjects/firstModelCheckPhD/gamma0.txt')
+y = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/dataY.txt').reshape((SpecNumMeas,1))
+gamma0 = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/gamma0.txt')
+noiseVec = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/noiseVec.txt')
+
+ANonLinMat = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/ANonLinMat.txt')
+print(np.allclose(A_O3 * nonLinA,ANonLinMat))
+AMat_lin = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/ALinMat.txt')
+print(np.allclose(A_lin,AMat_lin))
+FirstA_O3 = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/LinAMatO3.txt')
+FirstnonLinA = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/nonLinAMat.txt')
+print(np.allclose(A_O3,FirstA_O3))
+print(np.allclose(nonLinA,FirstnonLinA))
+FirstTemp = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/temp_values.txt')
+FirstPress = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/pressure_values.txt')
+FirstHeight = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/height_values.txt')
+print(np.allclose(pressure_values,FirstPress))
+print(np.allclose(temp_values,FirstTemp.reshape((SpecNumLayers,1))))
+print(np.allclose(height_values,FirstHeight.reshape((SpecNumLayers,1))))
+
+
 
 DataSet = y.reshape(SpecNumMeas)
-
 gamRes[0] = gamma0
 Results[0] = VMR_O3.reshape(SpecNumLayers)
 deltRes[0] = np.array([30, 1e-7, 0.8e-4])
@@ -274,7 +291,7 @@ for samp in range(1,SampleRounds):
 
     #np.savetxt(f'Res{testSet}.txt', Results[testSet],fmt = '%.15f', delimiter= '\t')
 ##
-oldMean = np.mean(Results, 0)
+firstMean = np.mean(Results, 0)
 ResCol = "#1E88E5"
 fig4, ax4 = plt.subplots(figsize=set_size(PgWidthPt, fraction=fraction))
 for r in range(0,SampleRounds):
@@ -282,20 +299,72 @@ for r in range(0,SampleRounds):
 
     ax4.plot(Sol,height_values,marker= '+',color = ResCol, zorder = 0, linewidth = 0.5, markersize = 5, alpha = 0.3)
 
-ax4.plot(oldMean, height_values,marker= 'o',color = 'r')
+ax4.plot(firstMean, height_values,marker= 'o',color = 'r')
 ax4.plot(VMR_O3, height_values,marker= 'o',color = 'g')
 plt.show()
 
-print('done')
 ## use O3 profiles to make up lin and nonLin data and use for mapping
 # test Real Map
+DatCol =  'gray'
+ResCol = "#1E88E5"
+TrueCol = [50/255,220/255, 0/255]
 currMap = np.eye(SpecNumMeas)
 RealMap, relMapErr, LinDataY, NonLinDataY = genDataFindandtestMap(currMap, L_d, gamma0, VMR_O3, Results, AscalConstKmToCm, A_lin, temp_values, pressure_values, ind, scalingConst,SampleRounds)
 
-print(np.mean(relMapErr))
+print(f'Mean rel Error form Map: {np.mean(relMapErr):.2f}')
 
 print('done')
 
+fig4, ax4 = plt.subplots(figsize=set_size(PgWidthPt, fraction=fraction))
+# ranInd = np.random.randint(SpecNumMeas)
+# ax4.plot(LinDataY[ranInd],tang_heights_lin, linestyle = 'dotted', marker = 'o', label = 'true linear data', markersize = 5 , zorder = 3 )
+# relErr = np.linalg.norm(NonLinDataY[ranInd] - RealMap @ LinDataY[ranInd]) / np.linalg.norm( RealMap @ LinDataY[ranInd]) * 100
+# print(relErr)
+# ax4.plot(RealMap @ LinDataY[ranInd],tang_heights_lin, linestyle = 'dotted', marker = 'o', label = r'map. $\bm{y}$' + f', rel. Err.: {relErr:.1e} \%', markersize = 8, zorder = 1)
+# ax4.plot(NonLinDataY[ranInd],tang_heights_lin, linestyle = 'dotted', marker = 'o', label = 'true nonlinear data', markersize = 15, zorder = 0)
+LinDat = np.matmul(A_O3 * 2,VMR_O3 * theta_scale_O3).reshape(SpecNumMeas) + noiseVec
+ax4.plot(LinDat,tang_heights_lin, linestyle = 'dotted', marker = 'o', label = 'true linear data', markersize = 5 , zorder = 3, color = 'k')
+relErr = np.linalg.norm( RealMap @ y.reshape(SpecNumMeas) -  LinDat) / np.linalg.norm(RealMap @ y.reshape(SpecNumMeas)) * 100
+
+print(relErr)
+ax4.plot(RealMap @ y.reshape(SpecNumMeas),tang_heights_lin, linestyle = 'dotted', marker = 'o', label = r'map. $\bm{y}$' + f', rel. Err.: {relErr:.1f} \%', markersize = 7, zorder = 1, color ='r')
+ax4.plot(y,tang_heights_lin, linestyle = 'dotted', marker = '*', label = 'true data', markersize = 20, zorder = 0, color = DatCol )
+
+ax4.legend()
+ax4.set_ylabel('(tangent) height in km')
+ax4.set_xlabel(r'spectral radiance in $\frac{\text{W} \text{cm}}{\text{m}^2 \text{sr}} $',labelpad=10)# color =dataCol,
+#ax4.tick_params(colors = DatCol, axis = 'x')
+ax4.xaxis.set_ticks_position('top')
+ax4.xaxis.set_label_position('top')
+
+plt.savefig('MapAssesment.svg')
+plt.show()
+
+## plot lin and non lin data to show that it is the same
+
+
+fig4, ax4 = plt.subplots(figsize=set_size(PgWidthPt, fraction=fraction))
+# ranInd = np.random.randint(SpecNumMeas)
+for r in range(0,SpecNumMeas):
+
+    ax4.plot(LinDataY[r],tang_heights_lin, linestyle = 'dotted', marker = 'o', label = 'linear data', markersize = 2 , color = 'k', linewidth = 0.1, zorder = 2)
+    ax4.plot(RealMap @ NonLinDataY[r],tang_heights_lin, linestyle = 'dotted', marker = 'o', label = 'mapped data', markersize = 5 ,zorder = 1,  color = 'r', linewidth = 0.1)
+    ax4.plot(NonLinDataY[r],tang_heights_lin, linestyle = 'dotted', marker = '*', label = 'data', markersize = 15 , zorder = 0, color = DatCol, linewidth = 1)
+
+handles, labels = ax4.get_legend_handles_labels()
+legend = ax4.legend(handles = [handles[0], handles[1], handles[2]])# loc='lower right', framealpha = 0.2,fancybox=True)#, bbox_to_anchor=(1.01, 1.01), frameon =True)
+
+ax4.set_ylabel('(tangent) height in km')
+ax4.set_xlabel(r'spectral radiance in $\frac{\text{W} \text{cm}}{\text{m}^2 \text{sr}} $',labelpad=10)# color =dataCol,
+ax4.xaxis.set_ticks_position('top')
+ax4.xaxis.set_label_position('top')
+
+plt.savefig('DataAssesment.svg')
+plt.show()
+
+
+
+#plot one eaxmaple of map
 ## for machine learning
 # num_epochs = 100
 # model = DoMachLearing(num_epochs, NonLinDataY.T, LinDataY.T)
@@ -315,10 +384,12 @@ print('done')
 
 
 ##
-lowBoundErr = 3
+lowBoundErr = 2.5
+round = 0
 meanErr = np.copy(lowBoundErr)
 oldMeanErr = np.copy(lowBoundErr)
-while meanErr >= np.copy(lowBoundErr):
+oldMean = np.copy(firstMean)
+while meanErr >= np.copy(lowBoundErr) and round <= 5:
 
     numDatSet = SpecNumMeas
     deltRes = np.zeros((SampleRounds, 3))
@@ -326,7 +397,7 @@ while meanErr >= np.copy(lowBoundErr):
     Results = np.zeros((SampleRounds, SpecNumLayers))
     DataSet = np.zeros((SpecNumMeas))
 
-    y_new = RealMap @ y
+    y_new = RealMap @ np.copy(y)
 
 
     gamRes[0] = gamma0
@@ -353,7 +424,7 @@ while meanErr >= np.copy(lowBoundErr):
 
 
     A = A_O3 * 2
-
+    #A = RealMap @ np.copy(A)
     ATy = np.matmul(A.T, y_new)
     ATA = np.matmul(A.T, A)
 
@@ -399,27 +470,30 @@ while meanErr >= np.copy(lowBoundErr):
 
     newMean = np.mean(Results, 0)
 
-    fig4, ax4 = plt.subplots(figsize=set_size(PgWidthPt, fraction=fraction))
-    for r in range(0, SampleRounds):
-        Sol = Results[r, :]
-
-        ax4.plot(Sol, height_values, marker='+', color=ResCol, zorder=0, linewidth=0.5, markersize=5, alpha=0.3)
-
-    ax4.plot(oldMean, height_values, marker='o', color='r')
-    ax4.plot(newMean, height_values, marker='o', color='k')
-    ax4.plot(VMR_O3, height_values, marker='o', color='g')
-    plt.show()
+    # fig4, ax4 = plt.subplots(figsize=set_size(PgWidthPt, fraction=fraction))
+    # for r in range(0, SampleRounds):
+    #     Sol = Results[r, :]
+    #
+    #     ax4.plot(Sol, height_values, marker='+', color=ResCol, zorder=0, linewidth=0.5, markersize=5, alpha=0.3)
+    #
+    # ax4.plot(oldMean, height_values, marker='o', color='r')
+    # ax4.plot(newMean, height_values, marker='o', color='k')
+    # ax4.plot(VMR_O3, height_values, marker='o', color='g')
+    # plt.show()
     meanErr = np.linalg.norm(newMean - oldMean) / np.linalg.norm(oldMean) * 100
     oldMean = np.copy(newMean)
     print(f'relErr in between Means: {meanErr} %')
 
-    # if meanErr > oldMeanErr:
-    #     #need to update to old Results
-    #     break
+    #if meanErr > oldMeanErr:
+    if meanErr < np.copy(lowBoundErr):
+        #need to update to old Results
+        #print('relative Error increased')
+        break
     oldMeanErr = np.copy(meanErr)
-    #currMap = np.copy(RealMap)
+    currMap = np.eye(SpecNumMeas)#np.copy(realmap)
     RealMap, relMapErr, LinDataY, NonLinDataY = genDataFindandtestMap(currMap, L_d, gamma0, VMR_O3, Results, AscalConstKmToCm, A_lin, temp_values,  pressure_values, ind, scalingConst, SampleRounds)
-
+    round += 1
+    print(round)
 ##
 DatCol =  'gray'
 ResCol = "#1E88E5"
@@ -433,7 +507,7 @@ for r in range(0, SampleRounds):
 
     ax1.plot(Sol, height_values, marker='+', color=ResCol, zorder=0, linewidth=0.5, markersize=5, label = r'$\bm{x} \sim \pi(\bm{x}|\bm{y}, \bm{\theta})$')# alpha=0.3,
 
-ax1.plot(oldMean, height_values, marker='>', color='r',markersize = 10, label =r'previous sample  mean')
+ax1.plot(firstMean, height_values, marker='>', color='r',markersize = 10, label =r'initial sample  mean')
 ax1.plot(newMean, height_values, marker='>', color='k', label =r'final sample mean')
 ax1.plot(VMR_O3, height_values, marker='o', color= TrueCol,markersize = 10, label =r'true $\bm{x}$', zorder = 1)
 
@@ -453,7 +527,7 @@ ax1.xaxis.set_label_position('bottom')
 ax1.spines[:].set_visible(False)
 #ax2.spines['top'].set_color(pyTCol)
 
-legend = ax1.legend(handles = [handles[-3], handles[-2],handles[-1],handles2[0], handles[0]])# loc='lower right', framealpha = 0.2,fancybox=True)#, bbox_to_anchor=(1.01, 1.01), frameon =True)
+legend = ax1.legend(handles = [handles[0], handles[-3], handles[-2],handles[-1],handles2[0]])# loc='lower right', framealpha = 0.2,fancybox=True)#, bbox_to_anchor=(1.01, 1.01), frameon =True)
 
 plt.savefig('LinkFuncO3Res.svg')
 plt.show()
@@ -461,87 +535,3 @@ print('done')
 
 # 3 prozent is good
 
-##
-
-#
-# Samps = MargPost.Output
-#
-#
-# fig4, ax4 = plt.subplots(4, 1, figsize=(8,15))
-# # ax4 = BigFig.add_subplot(4, 3, 4)
-# ax4[0].hist(Samps[burnInDel:,0], bins=50)
-# ax4[0].axvline(x=gamma0, color='r')
-# ax4[0].set_xlabel('$\gamma$')
-# # ax5 = BigFig.add_subplot(4, 3, 7)
-# ax4[1].hist(Samps[burnInDel:,1], bins=50)
-# ax4[1].set_xlabel('$h_0$')
-# # ax6 = BigFig.add_subplot(4, 3,10)
-# ax4[2].hist(Samps[burnInDel:,2], bins=50)
-# ax4[2].set_xlabel('$a$')
-# # ax7 = BigFig.add_subplot(4, 3,13)
-# ax4[3].hist(Samps[burnInDel:,3], bins=50)
-# ax4[3].set_xlabel('$\delta_0$')
-# #ax4[4].hist(Samps[burnInDel:,4], bins=50)
-#
-# # ax4[3].axvline(x=deltRes[0,2]/0.4, color='r')
-# # plt.savefig('TWalkHistO3.png')
-# #plt.show()
-#
-# print(np.mean(Samps,0))
-# fig4, ax4 = plt.subplots()
-#
-# ax4.hist(Samps[burnInDel:,4], bins=50)
-#
-# plt.show()
-# numOfO3 = 100
-# n = SpecNumLayers
-# m = len(y)
-# O3_Prof = np.zeros((numOfO3,n))
-# for i in range(0, numOfO3):
-#     MWGRand =  np.random.randint(low=0, high=tWalkSampNumDel)
-#     SetGamma = Samps[burnInDel+MWGRand,0]
-#     SetDelta = Parabel(height_values, *Samps[MWGRand,1:-1])
-#     #SetDelta = np.ones((1,n)) * Samps[MWGRand,3]
-#
-#     TriU = np.tril(np.triu(np.ones((n, )), k=1), 1) * SetDelta
-#     TriL = np.triu(np.tril(np.ones((n, n)), k=-1), -1) * SetDelta.T
-#     Diag = np.eye(n) * np.sum(TriU + TriL, 0)
-#
-#     L_d = -TriU + Diag - TriL
-#     L_d[0, 0] = 2 * L_d[0, 0]
-#     L_d[-1, -1] = 2 * L_d[-1, -1]
-#     SetB = SetGamma * ATA + L_d
-#
-#     W = np.random.multivariate_normal(np.zeros(len(A)), np.eye(len(A)))
-#     v_1 = np.sqrt(SetGamma) * A.T @ W.reshape((m, 1))
-#     W2 = np.random.multivariate_normal(np.zeros(len(L_d)), L_d)
-#     v_2 = W2.reshape((n, 1))
-#
-#     RandX = (SetGamma * ATy + v_1 + v_2)
-#
-#     Results, exitCode = scy.sparse.linalg.gmres(SetB, RandX[0::, 0], rtol=1e-5)
-#     O3_Prof[i,:] = Results / theta_scale_O3
-#
-#
-#
-# ResCol = "#1E88E5"
-# TrueCol = [50/255,220/255, 0/255]
-#
-# fig3, ax1 = plt.subplots()
-#
-#
-#
-# ax1.plot(VMR_O3,height_values,marker = 'o',markerfacecolor = TrueCol, color = TrueCol , label = 'true profile', zorder=1 ,linewidth = 1.5, markersize =7)
-#
-#
-# for r in range(1,numOfO3):
-#     Sol = O3_Prof[r, :]
-#
-#     ax1.plot(Sol,height_values,marker= '+',color = ResCol, zorder = 0, linewidth = 0.5, markersize = 5, alpha = 0.3)
-#
-# ax1.plot(np.mean(O3_Prof[1:],0), height_values, marker='>', color="k", label='sample mean', zorder=2, linewidth=0.5,
-#              markersize=5)
-#
-# plt.savefig('O3Results.png')
-# plt.show()
-# print("done")
