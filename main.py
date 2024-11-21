@@ -158,7 +158,7 @@ np.savetxt('tang_heights_lin.txt',tang_heights_lin, fmt = '%.15f', delimiter= '\
 
 AscalConstKmToCm = 1e3
 ind = 623
-SNR = 60
+SNR = 10
 scalingConst = 1e11
 
 numberOfDat = SpecNumMeas
