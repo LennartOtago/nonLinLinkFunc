@@ -313,8 +313,50 @@ RealMap, relMapErr, LinDataY, NonLinDataY = genDataFindandtestMap(currMap, L_d, 
 
 print(f'Mean rel Error form Map: {np.mean(relMapErr):.2f}')
 
-print('done')
+import torch
+from geomloss import SamplesLoss
 
+##
+testNum = 100
+testO3 = np.random.multivariate_normal(VMR_O3.reshape(SpecNumLayers), 1e-12 * L_d, size=testNum)
+testO3[testO3 < 0] = 0
+testDataY = np.zeros((testNum, SpecNumMeas))
+testNonLinY = np.zeros((testNum, SpecNumMeas))
+
+for k in range(0, testNum):
+    currO3 = testO3[k]
+    noise = 0#np.random.normal(0, np.sqrt(1 / gamma0), SpecNumMeas)
+    nonLinA = calcNonLin(A_lin, pressure_values, ind, temp_values, currO3.reshape((SpecNumLayers, 1)),
+                         AscalConstKmToCm,
+                         SpecNumLayers, SpecNumMeas)
+
+    testDataY[k] = np.matmul(A_O3 * 2, currO3.reshape((SpecNumLayers, 1)) * theta_scale_O3).reshape(SpecNumMeas) + noise
+    testNonLinY[k] = np.matmul(A_O3 * nonLinA, currO3.reshape((SpecNumLayers, 1)) * theta_scale_O3).reshape(
+        SpecNumMeas) + noise
+
+##
+from scipy.stats import wasserstein_distance
+for k in range(0, SpecNumMeas):
+    print(wasserstein_distance(testDataY[:,k], testNonLinY[:,k]))
+
+##
+tensorX = torch.tensor(testNonLinY, requires_grad=True)
+tensorY = torch.tensor(testDataY)
+start = time.time()
+# Define a Sinkhorn (~Wasserstein) loss between sampled measures
+Loss = SamplesLoss(loss="sinkhorn", p=2, blur=.05)
+
+Wass_xy  = Loss(tensorX ,tensorY )  # By default, use constant weights = 1/number of samples
+g_x, = torch.autograd.grad(Wass_xy , [tensorX]) # GeomLoss fully supports autograd!
+
+end = time.time()
+print(
+    "Wasserstein distance: {:.3f}, computed in {:.3f}s.".format(
+        Wass_xy.item(), end - start
+    )
+)
+print('done')
+##
 fig4, ax4 = plt.subplots(figsize=set_size(PgWidthPt, fraction=fraction))
 # ranInd = np.random.randint(SpecNumMeas)
 # ax4.plot(LinDataY[ranInd],tang_heights_lin, linestyle = 'dotted', marker = 'o', label = 'true linear data', markersize = 5 , zorder = 3 )

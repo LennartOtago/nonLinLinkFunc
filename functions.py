@@ -386,13 +386,14 @@ def genDataFindandtestMap(currMap, L_d, gamma0, VMR_O3, Results, AscalConstKmToC
 
         for k in range(0, testNum):
             currO3 = testO3[k]
+            noise = np.random.normal(0, np.sqrt(1 / gamma0), SpecNumMeas)
             nonLinA = calcNonLin(A_lin, pressure_values, ind, temp_values, currO3.reshape((SpecNumLayers, 1)),
                                  AscalConstKmToCm,
                                  SpecNumLayers, SpecNumMeas)
 
-            testDataY[k] = np.matmul(A_O3 * 2, currO3.reshape((SpecNumLayers, 1)) * theta_scale_O3).reshape(SpecNumMeas)
+            testDataY[k] = np.matmul(A_O3 * 2, currO3.reshape((SpecNumLayers, 1)) * theta_scale_O3).reshape(SpecNumMeas) + noise
             testNonLinY[k] = np.matmul(A_O3 * nonLinA, currO3.reshape((SpecNumLayers, 1)) * theta_scale_O3).reshape(
-                SpecNumMeas)
+                SpecNumMeas) + noise
             testNonLinY[k] = currMap @ testNonLinY[k]
 
         relMapErr = testSolvedMap(RealMap, gamma0, testNum, SpecNumMeas, testNonLinY, testDataY)
