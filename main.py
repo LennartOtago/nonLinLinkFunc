@@ -191,24 +191,25 @@ tWalkSampNum = 7500
 burnIn = 500
 
 y , gamma0 = add_noise(OrgData, SNR)
-y = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/dataY.txt').reshape((SpecNumMeas,1))
-gamma0 = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/gamma0.txt')
-noiseVec = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/noiseVec.txt')
 
-ANonLinMat = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/ANonLinMat.txt')
-print(np.allclose(A_O3 * nonLinA,ANonLinMat))
-AMat_lin = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/ALinMat.txt')
-print(np.allclose(A_lin,AMat_lin))
-FirstA_O3 = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/LinAMatO3.txt')
-FirstnonLinA = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/nonLinAMat.txt')
-print(np.allclose(A_O3,FirstA_O3))
-print(np.allclose(nonLinA,FirstnonLinA))
-FirstTemp = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/temp_values.txt')
-FirstPress = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/pressure_values.txt')
-FirstHeight = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/height_values.txt')
-print(np.allclose(pressure_values,FirstPress))
-print(np.allclose(temp_values,FirstTemp.reshape((SpecNumLayers,1))))
-print(np.allclose(height_values,FirstHeight.reshape((SpecNumLayers,1))))
+# y = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/dataY.txt').reshape((SpecNumMeas,1))
+# gamma0 = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/gamma0.txt')
+# noiseVec = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/noiseVec.txt')
+#
+# ANonLinMat = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/ANonLinMat.txt')
+# print(np.allclose(A_O3 * nonLinA,ANonLinMat))
+# AMat_lin = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/ALinMat.txt')
+# print(np.allclose(A_lin,AMat_lin))
+# FirstA_O3 = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/LinAMatO3.txt')
+# FirstnonLinA = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/nonLinAMat.txt')
+# print(np.allclose(A_O3,FirstA_O3))
+# print(np.allclose(nonLinA,FirstnonLinA))
+# FirstTemp = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/temp_values.txt')
+# FirstPress = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/pressure_values.txt')
+# FirstHeight = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/height_values.txt')
+# print(np.allclose(pressure_values,FirstPress))
+# print(np.allclose(temp_values,FirstTemp.reshape((SpecNumLayers,1))))
+# print(np.allclose(height_values,FirstHeight.reshape((SpecNumLayers,1))))
 
 
 
@@ -313,11 +314,9 @@ RealMap, relMapErr, LinDataY, NonLinDataY = genDataFindandtestMap(currMap, L_d, 
 
 print(f'Mean rel Error form Map: {np.mean(relMapErr):.2f}')
 
-import torch
-from geomloss import SamplesLoss
 
 ##
-testNum = 100
+testNum = 1000
 testO3 = np.random.multivariate_normal(VMR_O3.reshape(SpecNumLayers), 1e-12 * L_d, size=testNum)
 testO3[testO3 < 0] = 0
 testDataY = np.zeros((testNum, SpecNumMeas))
@@ -335,11 +334,22 @@ for k in range(0, testNum):
         SpecNumMeas) + noise
 
 ##
+
+print(np.mean(testDataY,0) - np.mean(testNonLinY,0))
+
+from scipy.stats import wasserstein_distance_nd
+
+print(wasserstein_distance_nd(testDataY, testNonLinY))
+
+##
 from scipy.stats import wasserstein_distance
 for k in range(0, SpecNumMeas):
     print(wasserstein_distance(testDataY[:,k], testNonLinY[:,k]))
 
 ##
+import torch
+from geomloss import SamplesLoss
+
 tensorX = torch.tensor(testNonLinY, requires_grad=True)
 tensorY = torch.tensor(testDataY)
 start = time.time()
