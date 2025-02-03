@@ -146,7 +146,7 @@ MinAng = np.arcsin((height_values[0] + R_Earth) / (R_Earth + ObsHeight))
 
 
 meas_ang = np.linspace(MinAng, MaxAng, SpecNumMeas)
-pointAcc = 0.0009
+pointAcc = 0.0003
 meas_ang = np.array(np.arange(MinAng[0], MaxAng[0], pointAcc))
 #meas_ang = np.array(np.arange(MinAng[0], MaxAng[0], 0.00045))
 SpecNumMeas = len(meas_ang)
@@ -158,7 +158,7 @@ np.savetxt('tang_heights_lin.txt',tang_heights_lin, fmt = '%.15f', delimiter= '\
 
 AscalConstKmToCm = 1e3
 ind = 623
-SNR = 10
+SNR = 60
 scalingConst = 1e11
 
 numberOfDat = SpecNumMeas
@@ -191,73 +191,147 @@ tWalkSampNum = 7500
 burnIn = 500
 
 y , gamma0 = add_noise(OrgData, SNR)
-y = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/dataY.txt').reshape((SpecNumMeas,1))
-gamma0 = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/gamma0.txt')
-noiseVec = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/noiseVec.txt')
 
-ANonLinMat = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/ANonLinMat.txt')
-print(np.allclose(A_O3 * nonLinA,ANonLinMat))
-AMat_lin = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/ALinMat.txt')
-print(np.allclose(A_lin,AMat_lin))
-FirstA_O3 = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/LinAMatO3.txt')
-FirstnonLinA = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/nonLinAMat.txt')
-print(np.allclose(A_O3,FirstA_O3))
-print(np.allclose(nonLinA,FirstnonLinA))
-FirstTemp = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/temp_values.txt')
-FirstPress = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/pressure_values.txt')
-FirstHeight = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/height_values.txt')
-print(np.allclose(pressure_values,FirstPress))
-print(np.allclose(temp_values,FirstTemp.reshape((SpecNumLayers,1))))
-print(np.allclose(height_values,FirstHeight.reshape((SpecNumLayers,1))))
+## plot linear and non-linear data
+
+fig4, ax4 = plt.subplots(figsize=set_size(PgWidthPt, fraction=fraction))
+ax4.plot(OrgData,  tang_heights_lin,marker= 'o',color = 'r', label = 'non Linear')
+ax4.plot(np.matmul(A_O3 * 2,VMR_O3 * theta_scale_O3), tang_heights_lin,label= 'linear' ,marker= 'o',color = 'g')
+ax4.legend()
+plt.show()
 
 
+#y = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/dataY.txt').reshape((SpecNumMeas,1))
+#gamma0 = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/gamma0.txt')
+#noiseVec = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/noiseVec.txt')
 
-DataSet = y.reshape(SpecNumMeas)
-gamRes[0] = gamma0
+# check if same as other projects
+# ANonLinMat = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/ANonLinMat.txt')
+# print(np.allclose(A_O3 * nonLinA,ANonLinMat))
+# AMat_lin = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/ALinMat.txt')
+# print(np.allclose(A_lin,AMat_lin))
+# FirstA_O3 = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/LinAMatO3.txt')
+# FirstnonLinA = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/nonLinAMat.txt')
+# print(np.allclose(A_O3,FirstA_O3))
+# print(np.allclose(nonLinA,FirstnonLinA))
+# FirstTemp = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/temp_values.txt')
+# FirstPress = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/pressure_values.txt')
+# FirstHeight = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/height_values.txt')
+# print(np.allclose(pressure_values,FirstPress))
+# print(np.allclose(temp_values,FirstTemp.reshape((SpecNumLayers,1))))
+# print(np.allclose(height_values,FirstHeight.reshape((SpecNumLayers,1))))
+#
+## initalize MTC
+# genarate
+# DataSet = y.reshape(SpecNumMeas)
+# gamRes[0] = gamma0
 Results[0] = VMR_O3.reshape(SpecNumLayers)
-deltRes[0] = np.array([30, 1e-7, 0.8e-4])
-SetDelta = Parabel(height_values, *deltRes[0])
+# deltRes[0] = np.array([30, 1e-7, 0.8e-4])
+# SetDelta = Parabel(height_values, *deltRes[0])
+A = A_O3 * 2 #linear
+ATy = np.matmul(A.T, y)
+ATA = np.matmul(A.T, A)
 
+betaG = 1e-10
+betaD = 1e-10
 
-TriU = np.tril(np.triu(np.ones((n, n)), k=1), 1) * SetDelta
-TriL = np.triu(np.tril(np.ones((n, n)), k=-1), -1) * SetDelta.T
+TriU = np.tril(np.triu(np.ones((n, n)), k=1), 1) #* SetDelta
+TriL = np.triu(np.tril(np.ones((n, n)), k=-1), -1) #* SetDelta.T
 Diag = np.eye(n) * np.sum(TriU + TriL, 0)
 
 L_d = -TriU + Diag - TriL
 L_d[0, 0] = 2 * L_d[0, 0]
 L_d[-1, -1] = 2 * L_d[-1, -1]
+startInd = 23
+L_d[startInd::, startInd::] = L_d[startInd::, startInd::] * 5
+L_d[startInd, startInd] = -L_d[startInd, startInd-1] - L_d[startInd, startInd+1] #-L[startInd, startInd-2] - L[startInd, startInd+2]
+
+theta = VMR_O3 * theta_scale_O3
+vari = np.zeros((len(theta)-2,1))
+
+for j in range(1,len(theta)-1):
+    vari[j-1] = np.var([theta[j-1],theta[j],theta[j+1]])
+def MinLogMargPost(params):#, coeff):
+
+    # gamma = params[0]
+    # delta = params[1]
+    gamma = params[0]
+    lamb = params[1]
+    if lamb < 0  or gamma < 0:
+        return np.nan
+
+    n = SpecNumLayers
+    m = SpecNumMeas
+
+    Bp = ATA + lamb * L_d
+
+    LowTri = np.linalg.cholesky(Bp)
+    UpTri = LowTri.T
+    # check if L L.H = B
+    B_inv_A_trans_y = lu_solve(LowTri, UpTri, ATy[0::, 0])
+
+    G = g(A, L_d,  lamb)
+    F = f(ATy, y,  B_inv_A_trans_y)
+
+    return -n/2 * np.log(lamb) - (m/2 + 1) * np.log(gamma) + 0.5 * G + 0.5 * gamma * F +  ( betaD *  lamb * gamma + betaG *gamma)
+
+#minimum = optimize.fmin(MargPostU, [5e-5,0.5])
+minimum = optimize.fmin(MinLogMargPost, [gamma0,1/gamma0* 1/ np.mean(vari)/15], maxiter = 25)
+gamma0 = minimum[0]
+lam0 = minimum[1]
+print(minimum)
+#taylor series arounf lam_0
+
+B = (ATA + lam0 * L_d)
+
+LowTri = np.linalg.cholesky(B)
+UpTri = LowTri.T
+# check if L L.H = B
+B_inv_A_trans_y0 = lu_solve(LowTri, UpTri,  ATy[0::, 0])
+
+B_inv_L = np.zeros(np.shape(B))
+
+for i in range(len(B)):
+    LowTri = np.linalg.cholesky(B)
+    UpTri = LowTri.T
+    B_inv_L[:, i] = lu_solve(LowTri, UpTri,  L_d[:, i])
+
+B_inv_L_2 = np.matmul(B_inv_L, B_inv_L)
+B_inv_L_3 = np.matmul(B_inv_L_2, B_inv_L)
 
 
+f_coeff = np.zeros(3)
+g_coeff = np.zeros(3)
+f_coeff[0] = np.matmul(np.matmul(ATy[0::, 0].T, B_inv_L), B_inv_A_trans_y0)
+f_coeff[1] = -1 * np.matmul(np.matmul(ATy[0::, 0].T, B_inv_L_2), B_inv_A_trans_y0)
+f_coeff[2] = 1 * np.matmul(np.matmul(ATy[0::, 0].T,B_inv_L_3) ,B_inv_A_trans_y0)
+
+g_coeff[0] = np.trace(B_inv_L)
+g_coeff[1] = -1 / 2 * np.trace(B_inv_L_2)
+g_coeff[2] = 1 /6 * np.trace(B_inv_L_3)
 
 
+number_samples = 10000
+burnIn = 100
+gamma0 = minimum[0]
+lam0 = minimum[1]
+f_0 = f(ATy, y, B_inv_A_trans_y0)
 
-def MargPostSupp(Params):
-    list = []
-    list.append(Params[0] > 0)
-    list.append(height_values[-1] > Params[1] > height_values[0])
-    list.append(Params[2] > 0)
-    list.append( Params[3] > 0)
-    return all(list)
-
-
-A = A_O3 * 2
-
-ATy = np.matmul(A.T, y)
-ATA = np.matmul(A.T, A)
-
-B0 = (ATA + 1 / gamRes[0] * L_d)
-B_inv_A_trans_y0, exitCode = scy.sparse.linalg.gmres(B0, ATy[:, 0], rtol=tol, restart=25)
-if exitCode != 0:
-    print(exitCode)
-
-log_post = lambda Params : log_postO3(Params, ATA, ATy, height_values, B_inv_A_trans_y0, Results[0, :].reshape((SpecNumLayers,1)), y, A, gamma0)
-MargPost = pytwalk.pytwalk(n=4, U=log_post, Supp=MargPostSupp)
-x0 = np.array([gamRes[0], *deltRes[0, :]])
-xp0 = 1.0001 * x0
 startTime = time.time()
-MargPost.Run(T=tWalkSampNum + burnIn, x0=x0, xp0=xp0)
+lambdas, gammas, k = MHwG(number_samples, burnIn, lam0, gamma0, f_0, f_coeff, g_coeff, betaG, betaD, n, m)
 print('time elapsed:' + str(time.time() - startTime))
-Samps = MargPost.Output
+print('acceptance ratio: ' + str(k/(number_samples+burnIn)))
+
+BinHist = 30
+lambHist, lambBinEdges = np.histogram(lambdas, bins= BinHist, density= True)
+gamHist, gamBinEdges = np.histogram(gammas, bins= BinHist, density= True)
+fig, axs = plt.subplots(2, 1,tight_layout=True,figsize=set_size(PgWidthPt, fraction=fraction) )#, dpi = dpi)
+axs[0].bar(gamBinEdges[1::],gamHist*np.diff(gamBinEdges)[0], zorder = 0,width = np.diff(gamBinEdges)[0])#10)
+axs[0].set_xlabel(r'the noise precision $\gamma$')
+axs[1].bar(lambBinEdges[1::],lambHist*np.diff(lambBinEdges)[0], zorder = 0,width = np.diff(lambBinEdges)[0])#10)
+axs[1].set_title(r'$\lambda =\delta / \gamma$, the regularization parameter', fontsize = 12)
+#plt.savefig('HistoPlot.png')
+plt.show()
 
 for samp in range(1,SampleRounds):
 
