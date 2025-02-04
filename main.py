@@ -146,7 +146,7 @@ MinAng = np.arcsin((height_values[0] + R_Earth) / (R_Earth + ObsHeight))
 
 
 meas_ang = np.linspace(MinAng, MaxAng, SpecNumMeas)
-pointAcc = 0.0003
+pointAcc = 0.0004
 meas_ang = np.array(np.arange(MinAng[0], MaxAng[0], pointAcc))
 #meas_ang = np.array(np.arange(MinAng[0], MaxAng[0], 0.00045))
 SpecNumMeas = len(meas_ang)
@@ -176,20 +176,6 @@ nonLinA = calcNonLin(A_lin, pressure_values, ind, temp_values, VMR_O3,
                      SpecNumLayers, SpecNumMeas)
 OrgData = np.matmul(A_O3 * nonLinA,VMR_O3 * theta_scale_O3)
 # OrgData = np.matmul(A_O3 * 2,VMR_O3 * theta_scale_O3)
-##
-# samplig  linear
-SampleRounds = 100
-numDatSet = SpecNumMeas
-deltRes = np.zeros((SampleRounds, 3))
-gamRes = np.zeros((SampleRounds))
-Results = np.zeros((SampleRounds, SpecNumLayers))
-DataSet = np.zeros((SpecNumMeas))
-
-tol = 1e-8
-
-tWalkSampNum = 7500
-burnIn = 500
-
 y , gamma0 = add_noise(OrgData, SNR)
 
 ## plot linear and non-linear data
@@ -201,6 +187,18 @@ ax4.legend()
 plt.show()
 
 
+
+
+
+noise = np.random.normal(0, np.sqrt(1 / gamma0), size = OrgData.shape)
+relMapErrDat = np.linalg.norm((OrgData + noise) - OrgData) / np.linalg.norm((OrgData + noise)) * 100
+fig4, ax4 = plt.subplots(figsize=set_size(PgWidthPt, fraction=fraction))
+ax4.plot(OrgData + noise,  tang_heights_lin,marker= 'o',color = 'r', label = 'non Linear')
+ax4.plot(np.matmul(A_O3 * 2,VMR_O3 * theta_scale_O3) + noise, tang_heights_lin,label= 'linear' ,marker= 'o',color = 'g')
+ax4.legend()
+plt.show()
+
+print(relMapErrDat)
 #y = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/dataY.txt').reshape((SpecNumMeas,1))
 #gamma0 = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/gamma0.txt')
 #noiseVec = np.loadtxt('/home/lennartgolks/PycharmProjects/AllnonLinear/noiseVec.txt')
@@ -221,8 +219,19 @@ plt.show()
 # print(np.allclose(temp_values,FirstTemp.reshape((SpecNumLayers,1))))
 # print(np.allclose(height_values,FirstHeight.reshape((SpecNumLayers,1))))
 #
-## initalize MTC
+## initalize affine map with MTC
 # genarate
+FirstSamp = SpecNumMeas
+numDatSet = SpecNumMeas
+deltRes = np.zeros(FirstSamp)
+gamRes = np.zeros(FirstSamp)
+Results = np.zeros((FirstSamp, SpecNumLayers))
+DataSet = np.zeros(SpecNumMeas)
+
+tol = 1e-8
+
+tWalkSampNum = 7500
+burnIn = 500
 # DataSet = y.reshape(SpecNumMeas)
 # gamRes[0] = gamma0
 Results[0] = VMR_O3.reshape(SpecNumLayers)
@@ -245,6 +254,7 @@ L_d[-1, -1] = 2 * L_d[-1, -1]
 startInd = 23
 L_d[startInd::, startInd::] = L_d[startInd::, startInd::] * 5
 L_d[startInd, startInd] = -L_d[startInd, startInd-1] - L_d[startInd, startInd+1] #-L[startInd, startInd-2] - L[startInd, startInd+2]
+lowC_L = scy.linalg.cholesky(L_d, lower = True)
 
 theta = VMR_O3 * theta_scale_O3
 vari = np.zeros((len(theta)-2,1))
@@ -333,48 +343,44 @@ axs[1].set_title(r'$\lambda =\delta / \gamma$, the regularization parameter', fo
 #plt.savefig('HistoPlot.png')
 plt.show()
 
-for samp in range(1,SampleRounds):
+
+deltas = lambdas * gammas
+SetGammas = gammas[np.random.randint(low=burnIn, high=len(gammas), size=FirstSamp)]
+SetDeltas  = deltas[np.random.randint(low=burnIn, high=len(deltas), size=FirstSamp)]
+
+for p in range(1,FirstSamp):
+
+    SetGamma = SetGammas[p]  # minimum[0]
+    SetDelta = SetDeltas[p]  # minimum[1]
+    W = np.random.normal(loc=0.0, scale=1.0, size=len(A))  # .reshape((len(A),1))
+    v_1 = np.sqrt(SetGamma) * A.T @ W
+
+    W2 = lowC_L @ np.random.normal(loc=0.0, scale=1.0, size=len(L_d))  # .reshape((len(L),1))
+    v_2 = np.sqrt(SetDelta) * W2
+    SetB = SetGamma * ATA + SetDelta * L_d
+    RandX = (SetGamma * ATy[0::, 0] + v_1 + v_2)
+
+    LowTri = np.linalg.cholesky(SetB)
+    UpTri = LowTri.T
+    O3_Prof = lu_solve(LowTri, UpTri, RandX)
 
 
-    MWGRand = burnIn + np.random.randint(low=0, high=tWalkSampNum)
-    SetGamma = Samps[MWGRand, 0]
-    SetDelta = Parabel(height_values, *Samps[MWGRand, 1:-1])
-
-    TriU = np.tril(np.triu(np.ones((n, n)), k=1), 1) * SetDelta
-    TriL = np.triu(np.tril(np.ones((n, n)), k=-1), -1) * SetDelta.T
-    Diag = np.eye(n) * np.sum(TriU + TriL, 0)
-
-    L_d = -TriU + Diag - TriL
-    L_d[0, 0] = 2 * L_d[0, 0]
-    L_d[-1, -1] = 2 * L_d[-1, -1]
-    SetB = SetGamma * ATA +  L_d
-
-    W = np.random.multivariate_normal(np.zeros(len(A)), np.eye(len(A)))
-    v_1 = np.sqrt(SetGamma) * A.T @ W.reshape((m, 1))
-    W2 = np.random.multivariate_normal(np.zeros(len(L_d)), L_d)
-    v_2 = W2.reshape((n, 1))
-
-    RandX = (SetGamma * ATy + v_1 + v_2)
-    O3_Prof, exitCode = scy.sparse.linalg.gmres(SetB, RandX[0::, 0], rtol=tol)
-    Results[samp, :] = O3_Prof/ theta_scale_O3
-    deltRes[samp, :] = np.array([Samps[MWGRand, 1:-1]])
-    gamRes[samp] = SetGamma
-
-        # print(np.mean(O3_Prof))
+    Results[p, :] = O3_Prof/ theta_scale_O3
+    deltRes[p] = SetDelta
+    gamRes[p] = SetGamma
 
 
-    #np.savetxt(f'Res{testSet}.txt', Results[testSet],fmt = '%.15f', delimiter= '\t')
-##
 firstMean = np.mean(Results, 0)
 ResCol = "#1E88E5"
 fig4, ax4 = plt.subplots(figsize=set_size(PgWidthPt, fraction=fraction))
-for r in range(0,SampleRounds):
+for r in range(0,FirstSamp):
     Sol = Results[r, :]
 
     ax4.plot(Sol,height_values,marker= '+',color = ResCol, zorder = 0, linewidth = 0.5, markersize = 5, alpha = 0.3)
 
-ax4.plot(firstMean, height_values,marker= 'o',color = 'r')
-ax4.plot(VMR_O3, height_values,marker= 'o',color = 'g')
+ax4.plot(firstMean, height_values,marker= 'o',color = 'r', label = 'sample Mean')
+ax4.plot(VMR_O3, height_values,marker= 'o',color = 'g', label = 'ground truth')
+ax4.legend()
 plt.show()
 
 ## use O3 profiles to make up lin and nonLin data and use for mapping
@@ -383,14 +389,124 @@ DatCol =  'gray'
 ResCol = "#1E88E5"
 TrueCol = [50/255,220/255, 0/255]
 currMap = np.eye(SpecNumMeas)
-RealMap, relMapErr, LinDataY, NonLinDataY = genDataFindandtestMap(currMap, L_d, gamma0, VMR_O3, Results, AscalConstKmToCm, A_lin, temp_values, pressure_values, ind, scalingConst,SampleRounds)
-
+RealMap, relMapErr, LinDataY, NonLinDataY, testO3 = genDataFindandtestMap(currMap, L_d, gamma0, VMR_O3, Results, AscalConstKmToCm, A_lin, temp_values, pressure_values, ind, scalingConst, FirstSamp, relMapErrDat )
 print(f'Mean rel Error form Map: {np.mean(relMapErr):.2f}')
 
+fig4, ax4 = plt.subplots(figsize=set_size(PgWidthPt, fraction=fraction))
+for k in range(0,len(testO3[:,0])):
+    ax4.plot(testO3[k],height_values)
+plt.show()
+
+
+noise = np.random.normal(0, np.sqrt(1 / gamma0), size = OrgData.shape)
+linTestDat = np.matmul(A_O3 * 2,VMR_O3 * theta_scale_O3) + noise
+nonLinTestDat = OrgData + noise
+
+fig4, ax4 = plt.subplots(figsize=set_size(PgWidthPt, fraction=fraction))
+ax4.plot( linTestDat,tang_heights_lin, linestyle = 'dotted', marker = 'o', label = 'true linear data', markersize = 5 , zorder = 3, color = 'k')
+relErr = np.linalg.norm( RealMap @ nonLinTestDat -  linTestDat) / np.linalg.norm(RealMap @ nonLinTestDat) * 100
+print(relErr)
+ax4.plot(RealMap @ nonLinTestDat,tang_heights_lin, linestyle = 'dotted', marker = 'o', label = r'map. $\bm{y}$' + f', rel. Err.: {relErr:.1f} \%', markersize = 7, zorder = 1, color ='r')
+ax4.plot(nonLinTestDat,tang_heights_lin, linestyle = 'dotted', marker = '*', label = 'original data', markersize = 20, zorder = 0, color = DatCol )
+ax4.legend()
+ax4.set_ylabel('(tangent) height in km')
+ax4.set_xlabel(r'spectral radiance in $\frac{\text{W} \text{cm}}{\text{m}^2 \text{sr}} $',labelpad=10)# color =dataCol,
+#ax4.tick_params(colors = DatCol, axis = 'x')
+ax4.xaxis.set_ticks_position('top')
+ax4.xaxis.set_label_position('top')
+#plt.savefig('MapAssesment.svg')
+plt.show()
+## do now with mapped data
+y_mapped = RealMap @ y
+ATy_mapped = np.matmul(A.T, y_mapped)
+B = (ATA + lam0 * L_d)
+
+LowTri = np.linalg.cholesky(B)
+UpTri = LowTri.T
+# check if L L.H = B
+B_inv_A_trans_y0_mapped = lu_solve(LowTri, UpTri,  ATy_mapped[0::, 0])
+
+
+
+
+
+f_coeff = np.zeros(3)
+
+f_coeff[0] = np.matmul(np.matmul(ATy_mapped[0::, 0].T, B_inv_L), B_inv_A_trans_y0_mapped)
+f_coeff[1] = -1 * np.matmul(np.matmul(ATy_mapped[0::, 0].T, B_inv_L_2), B_inv_A_trans_y0_mapped)
+f_coeff[2] = 1 * np.matmul(np.matmul(ATy_mapped[0::, 0].T,B_inv_L_3) ,B_inv_A_trans_y0_mapped)
+
+
+
+
+number_samples = 10000
+burnIn = 100
+gamma0 = minimum[0]
+lam0 = minimum[1]
+f_0 = f(ATy_mapped, y_mapped, B_inv_A_trans_y0_mapped)
+
+startTime = time.time()
+lambdas, gammas, k = MHwG(number_samples, burnIn, lam0, gamma0, f_0, f_coeff, g_coeff, betaG, betaD, n, m)
+print('time elapsed:' + str(time.time() - startTime))
+print('acceptance ratio: ' + str(k/(number_samples+burnIn)))
+
+
+BinHist = 30
+lambHist, lambBinEdges = np.histogram(lambdas, bins= BinHist, density= True)
+gamHist, gamBinEdges = np.histogram(gammas, bins= BinHist, density= True)
+fig, axs = plt.subplots(2, 1,tight_layout=True,figsize=set_size(PgWidthPt, fraction=fraction) )#, dpi = dpi)
+axs[0].bar(gamBinEdges[1::],gamHist*np.diff(gamBinEdges)[0], zorder = 0,width = np.diff(gamBinEdges)[0])#10)
+axs[0].set_xlabel(r'the noise precision $\gamma$')
+axs[1].bar(lambBinEdges[1::],lambHist*np.diff(lambBinEdges)[0], zorder = 0,width = np.diff(lambBinEdges)[0])#10)
+axs[1].set_title(r'$\lambda =\delta / \gamma$, the regularization parameter', fontsize = 12)
+#plt.savefig('HistoPlot.png')
+plt.show()
+
+
+deltas = lambdas * gammas
+SetGammas = gammas[np.random.randint(low=burnIn, high=len(gammas), size=FirstSamp)]
+SetDeltas  = deltas[np.random.randint(low=burnIn, high=len(deltas), size=FirstSamp)]
+
+for p in range(1,FirstSamp):
+
+    SetGamma = SetGammas[p]  # minimum[0]
+    SetDelta = SetDeltas[p]  # minimum[1]
+    W = np.random.normal(loc=0.0, scale=1.0, size=len(A))  # .reshape((len(A),1))
+    v_1 = np.sqrt(SetGamma) * A.T @ W
+
+    W2 = lowC_L @ np.random.normal(loc=0.0, scale=1.0, size=len(L_d))  # .reshape((len(L),1))
+    v_2 = np.sqrt(SetDelta) * W2
+    SetB = SetGamma * ATA + SetDelta * L_d
+    RandX = (SetGamma * ATy[0::, 0] + v_1 + v_2)
+
+    LowTri = np.linalg.cholesky(SetB)
+    UpTri = LowTri.T
+    O3_Prof = lu_solve(LowTri, UpTri, RandX)
+
+
+    Results[p, :] = O3_Prof/ theta_scale_O3
+    deltRes[p] = SetDelta
+    gamRes[p] = SetGamma
+
+
+firstMean = np.mean(Results, 0)
+ResCol = "#1E88E5"
+fig4, ax4 = plt.subplots(figsize=set_size(PgWidthPt, fraction=fraction))
+for r in range(0,FirstSamp):
+    Sol = Results[r, :]
+
+    ax4.plot(Sol,height_values,marker= '+',color = ResCol, zorder = 0, linewidth = 0.5, markersize = 5, alpha = 0.3)
+
+ax4.plot(firstMean, height_values,marker= 'o',color = 'r', label = 'sample Mean')
+ax4.plot(VMR_O3, height_values,marker= 'o',color = 'g', label = 'ground truth')
+ax4.legend()
+plt.show()
+
+##
 import torch
 from geomloss import SamplesLoss
 
-##
+
 testNum = 100
 testO3 = np.random.multivariate_normal(VMR_O3.reshape(SpecNumLayers), 1e-12 * L_d, size=testNum)
 testO3[testO3 < 0] = 0
@@ -413,9 +529,30 @@ from scipy.stats import wasserstein_distance
 for k in range(0, SpecNumMeas):
     print(wasserstein_distance(testDataY[:,k], testNonLinY[:,k]))
 
+#
+# from scipy.stats import wasserstein_distance
+# for k in range(0, SpecNumMeas):
+#     print(wasserstein_distance(LinY_norm[:,k], nonLinY_norm[:,k]))
 ##
-tensorX = torch.tensor(testNonLinY, requires_grad=True)
-tensorY = torch.tensor(testDataY)
+nonLinY_norm = ((testNonLinY.T - np.mean(testNonLinY, 1)) / np.std(testNonLinY, 1)).T
+LinY_norm = ((testDataY.T - np.mean(testDataY, 1)) / np.std(testDataY, 1)).T
+nonLinY_norm = testNonLinY / np.sum(testNonLinY)
+LinY_norm = testDataY / np.sum(testDataY)
+
+testNonLinYTens = torch.tensor(np.copy(testNonLinY), requires_grad=True)
+testDataYTens = torch.tensor(np.copy(testDataY))
+
+z = torch.cat((testNonLinYTens , testDataYTens))
+offset = z.mean(dim=0)
+scale = 1 * (z - offset).abs().mean()
+
+tensorX, tensorY = (testNonLinYTens - offset) / scale, (testDataYTens - offset) / scale
+
+
+
+
+#tensorX = torch.tensor(nonLinY_norm, requires_grad=True)
+#tensorY = torch.tensor(LinY_norm)
 start = time.time()
 # Define a Sinkhorn (~Wasserstein) loss between sampled measures
 Loss = SamplesLoss(loss="sinkhorn", p=2, blur=.05)
@@ -425,7 +562,7 @@ g_x, = torch.autograd.grad(Wass_xy , [tensorX]) # GeomLoss fully supports autogr
 
 end = time.time()
 print(
-    "Wasserstein distance: {:.3f}, computed in {:.3f}s.".format(
+    "Wasserstein distance: {:.5e}, computed in {:.5f}s.".format(
         Wass_xy.item(), end - start
     )
 )

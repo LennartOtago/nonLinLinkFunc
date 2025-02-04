@@ -362,10 +362,12 @@ def testSolvedMap(RealMap, gamma0, testNum, SpecNumMeas, testNonLinY, testDataY)
 
     return relMapErr
 
-def genDataFindandtestMap(currMap, L_d, gamma0, VMR_O3, Results, AscalConstKmToCm, A_lin, temp_values, pressure_values, ind, scalingConst,SampleRounds):
+def genDataFindandtestMap(currMap, L_d, gamma0, VMR_O3, Results, AscalConstKmToCm, A_lin, temp_values, pressure_values, ind, scalingConst,SampleRounds, relMapErrDat):
+    '''Find map from non-linear to linear data'''
+
     SpecNumMeas, SpecNumLayers = A_lin.shape
-    relMapErr = 1
-    while np.mean(relMapErr) >= 1:
+    relMapErr = relMapErrDat
+    while np.mean(relMapErr) >= relMapErrDat:
         testDat = SpecNumMeas
         A_O3, theta_scale_O3 = composeAforO3(A_lin, temp_values, pressure_values, ind, scalingConst)
 
@@ -393,9 +395,12 @@ def genDataFindandtestMap(currMap, L_d, gamma0, VMR_O3, Results, AscalConstKmToC
             NonLinDataY[test] = currMap @ NonLinDataY[test]
         RealMap = LinModelSolve(LinDataY, NonLinDataY, SpecNumMeas)
 
-        testNum = 100
-        testO3 = np.random.multivariate_normal(VMR_O3.reshape(SpecNumLayers), 1e-12 * L_d, size=testNum)
+
+        #test map do find error
+        testNum = len(Results)#100
+        testO3 = Results#np.random.multivariate_normal(VMR_O3.reshape(SpecNumLayers), 1e-18 * L_d, size=testNum)
         testO3[testO3 < 0] = 0
+
         testDataY = np.zeros((testNum, SpecNumMeas))
         testNonLinY = np.zeros((testNum, SpecNumMeas))
 
@@ -412,8 +417,9 @@ def genDataFindandtestMap(currMap, L_d, gamma0, VMR_O3, Results, AscalConstKmToC
             testNonLinY[k] = currMap @ testNonLinY[k]
 
         relMapErr = testSolvedMap(RealMap, gamma0, testNum, SpecNumMeas, testNonLinY, testDataY)
-
-    return RealMap @ currMap, relMapErr, LinDataY, NonLinDataY
+        print(np.mean(relMapErr))
+        currMap = RealMap @ np.copy(currMap)
+    return currMap, relMapErr, LinDataY, NonLinDataY, testO3
 # def testMachMap(Map):
 
 
@@ -453,7 +459,7 @@ def set_size(width, fraction=1):
 
 
 def MHwG(number_samples, burnIn, lam0, gamma0, f_0, f_coeff, g_coeff, betaG, betaD, n, m):
-    wLam = 0.6 * lam0#8e3#7e1
+    wLam = 0.65 * lam0#8e3#7e1
     SpecNumLayers = n
     SpecNumMeas = m
     alphaG = 1
