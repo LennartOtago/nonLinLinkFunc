@@ -544,7 +544,7 @@ testDataYTens = torch.tensor(np.copy(testDataY))
 
 z = torch.cat((testNonLinYTens , testDataYTens))
 offset = z.mean(dim=0)
-scale = 1 * (z - offset).abs().mean()
+scale = 10 * (z - offset).abs().mean()
 
 tensorX, tensorY = (testNonLinYTens - offset) / scale, (testDataYTens - offset) / scale
 
@@ -555,7 +555,7 @@ tensorX, tensorY = (testNonLinYTens - offset) / scale, (testDataYTens - offset) 
 #tensorY = torch.tensor(LinY_norm)
 start = time.time()
 # Define a Sinkhorn (~Wasserstein) loss between sampled measures
-Loss = SamplesLoss(loss="sinkhorn", p=2, blur=.05)
+Loss = SamplesLoss(loss="sinkhorn", p=2, blur=.05, scaling = 0.9)
 
 Wass_xy  = Loss(tensorX ,tensorY )  # By default, use constant weights = 1/number of samples
 g_x, = torch.autograd.grad(Wass_xy , [tensorX]) # GeomLoss fully supports autograd!
@@ -566,6 +566,8 @@ print(
         Wass_xy.item(), end - start
     )
 )
+##
+
 print('done')
 ##
 fig4, ax4 = plt.subplots(figsize=set_size(PgWidthPt, fraction=fraction))
