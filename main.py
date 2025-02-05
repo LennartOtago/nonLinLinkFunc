@@ -146,7 +146,7 @@ MinAng = np.arcsin((height_values[0] + R_Earth) / (R_Earth + ObsHeight))
 
 
 meas_ang = np.linspace(MinAng, MaxAng, SpecNumMeas)
-pointAcc = 0.0004
+pointAcc = 0.0003
 meas_ang = np.array(np.arange(MinAng[0], MaxAng[0], pointAcc))
 #meas_ang = np.array(np.arange(MinAng[0], MaxAng[0], 0.00045))
 SpecNumMeas = len(meas_ang)
