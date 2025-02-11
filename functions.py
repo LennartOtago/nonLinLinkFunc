@@ -46,12 +46,12 @@ def gen_sing_map(meas_ang, height, obs_height, R):
             t += 1
 
         # first dr
-        A_height[m, t - 1] = 0.5 * np.sqrt((layers[t] + R) ** 2 - (tang_height[m] + R) ** 2)
-        dr = 2 * A_height[m, t - 1]
+        A_height[m, t - 1] =  np.sqrt((layers[t] + R) ** 2 - (tang_height[m] + R) ** 2)
+        dr = A_height[m, t - 1]
         for i in range(t, len(layers) - 1):
             A_height[m, i] = np.sqrt((layers[i + 1] + R) ** 2 - (tang_height[m] + R) ** 2) - dr
             dr = dr + A_height[m, i]
-        A_height[m, i] = 0.5 * A_height[m, i]
+        A_height[m, i] =  0.5 * A_height[m, i]
     #return 2 * (A_...) for linear part
     return  A_height, tang_height, layers[-1]
 
@@ -164,21 +164,36 @@ def calcNonLin(A_lin, pressure_values, ind, temp_values, VMR_O3, AscalConstKmToC
     num_mole = 1 / (constants.Boltzmann)
 
     theta = num_mole * f_broad * 1e-4 * VMR_O3.reshape((SpecNumLayers,1)) * S[ind,0]
-    ConcVal = - pressure_values.reshape(
-        (SpecNumLayers, 1)) * 1e2 * LineIntScal / temp_values * theta * AscalConstKmToCm
+    ConcVal = - pressure_values.reshape((SpecNumLayers, 1)) * 1e2 * LineIntScal / temp_values * theta * AscalConstKmToCm
 
 
     mask = A_lin * np.ones((SpecNumMeas, SpecNumLayers))
     mask[mask != 0] = 1
-
-    ConcValMat = np.tril(np.ones(len(ConcVal))) * ConcVal
-    ValPerLayPre = mask * (A_lin @ ConcValMat)
-    preTrans = np.exp(ValPerLayPre)
-
-    ConcValMatAft = np.triu(np.ones(len(ConcVal))) * ConcVal
-    ValPerLayAft = mask * (A_lin @ ConcValMatAft)
-    BasPreTrans = (A_lin @ ConcValMat)[0::, 0].reshape((SpecNumMeas, 1)) @ np.ones((1, SpecNumLayers))
-    afterTrans = np.exp( (BasPreTrans + ValPerLayAft) * mask )
+    preTrans = np.zeros((SpecNumMeas, SpecNumLayers))
+    #ConcValMat = np.tril(np.ones(len(ConcVal))) * ConcVal
+    #ValPerLayPre = mask * (A_lin @ ConcValMat)
+    for i in range(0,SpecNumMeas):
+        for j in range(0, SpecNumLayers):
+            if mask[i,j] !=0 :
+                currMask = np.copy(mask[i, :])
+                currMask[j] = 0.5
+                currMask[-1] = 0.5
+                ValPerLayPre = np.sum(ConcVal.T * currMask * A_lin[i,:])
+                preTrans[i,j] = np.exp(ValPerLayPre)
+    afterTrans = np.zeros((SpecNumMeas, SpecNumLayers))
+    for i in range(0,SpecNumMeas):
+        for j in range(0, SpecNumLayers):
+            if mask[i,j] !=0 :
+                currMask1 = np.copy(mask[i, :])
+                currMask1[-1] = 0.5
+                currMask2 = np.copy(mask[i, :j+1])
+                currMask2[-1] = 0.5
+                ValPerLayAfter = np.sum(ConcVal.T * currMask1 * A_lin[i,:]) + np.sum(ConcVal[:j+1].T * currMask2 * A_lin[i,:j+1])
+                afterTrans[i,j] = np.exp(ValPerLayAfter)
+    #ConcValMatAft = np.triu(np.ones(len(ConcVal))) * ConcVal
+    #ValPerLayAft = mask * (A_lin @ ConcValMatAft)
+    #BasPreTrans = (A_lin @ ConcValMat)[0::, 0].reshape((SpecNumMeas, 1)) @ np.ones((1, SpecNumLayers))
+    #afterTrans = np.exp( (BasPreTrans + ValPerLayAft) * mask )
 
 
     return preTrans + afterTrans
@@ -347,10 +362,12 @@ def testSolvedMap(RealMap, gamma0, testNum, SpecNumMeas, testNonLinY, testDataY)
 
     return relMapErr
 
-def genDataFindandtestMap(currMap, L_d, gamma0, VMR_O3, Results, AscalConstKmToCm, A_lin, temp_values, pressure_values, ind, scalingConst,SampleRounds):
+def genDataFindandtestMap(currMap, L_d, gamma0, VMR_O3, Results, AscalConstKmToCm, A_lin, temp_values, pressure_values, ind, scalingConst,SampleRounds, relMapErrDat):
+    '''Find map from non-linear to linear data'''
+
     SpecNumMeas, SpecNumLayers = A_lin.shape
-    relMapErr = 1
-    while np.mean(relMapErr) >= 1:
+    relMapErr = relMapErrDat
+    while np.mean(relMapErr) >= relMapErrDat:
         testDat = SpecNumMeas
         A_O3, theta_scale_O3 = composeAforO3(A_lin, temp_values, pressure_values, ind, scalingConst)
 
@@ -378,9 +395,12 @@ def genDataFindandtestMap(currMap, L_d, gamma0, VMR_O3, Results, AscalConstKmToC
             NonLinDataY[test] = currMap @ NonLinDataY[test]
         RealMap = LinModelSolve(LinDataY, NonLinDataY, SpecNumMeas)
 
-        testNum = 100
-        testO3 = np.random.multivariate_normal(VMR_O3.reshape(SpecNumLayers), 1e-12 * L_d, size=testNum)
+
+        #test map do find error
+        testNum = len(Results)#100
+        testO3 = Results#np.random.multivariate_normal(VMR_O3.reshape(SpecNumLayers), 1e-18 * L_d, size=testNum)
         testO3[testO3 < 0] = 0
+
         testDataY = np.zeros((testNum, SpecNumMeas))
         testNonLinY = np.zeros((testNum, SpecNumMeas))
 
@@ -397,8 +417,9 @@ def genDataFindandtestMap(currMap, L_d, gamma0, VMR_O3, Results, AscalConstKmToC
             testNonLinY[k] = currMap @ testNonLinY[k]
 
         relMapErr = testSolvedMap(RealMap, gamma0, testNum, SpecNumMeas, testNonLinY, testDataY)
-
-    return RealMap @ currMap, relMapErr, LinDataY, NonLinDataY
+        print(np.mean(relMapErr))
+        currMap = RealMap @ np.copy(currMap)
+    return currMap, relMapErr, LinDataY, NonLinDataY, testO3
 # def testMachMap(Map):
 
 
@@ -435,3 +456,120 @@ def set_size(width, fraction=1):
     fig_dim = (fig_width_in, fig_height_in)
 
     return fig_dim
+
+
+def MHwG(number_samples, burnIn, lam0, gamma0, f_0, f_coeff, g_coeff, betaG, betaD, n, m):
+    wLam = 0.65 * lam0#8e3#7e1
+    SpecNumLayers = n
+    SpecNumMeas = m
+    alphaG = 1
+    alphaD = 1
+    k = 0
+    f_0_1 = f_coeff[0]
+    f_0_2 = f_coeff[1]
+    f_0_3 = f_coeff[2]
+    g_0_1 = g_coeff[0]
+    g_0_2 = g_coeff[1]
+    g_0_3 = g_coeff[2]
+    gammas = np.zeros(number_samples + burnIn)
+    #deltas = np.zeros(number_samples + burnIn)
+    lambdas = np.zeros(number_samples + burnIn)
+
+    gammas[0] = gamma0
+    lambdas[0] = lam0
+
+
+
+    shape = SpecNumMeas / 2 + alphaD + alphaG
+    rate = f_0 / 2 + betaG + betaD * lam0
+
+    f_new = np.copy(f_0)
+
+    for t in range(number_samples + burnIn-1):
+        #print(t)
+
+        # # draw new lambda
+        lam_p = np.random.normal(lambdas[t], wLam)
+
+        while lam_p < 0:
+                lam_p = np.random.normal(lambdas[t], wLam)
+
+        delta_lam = lam_p - lambdas[t]
+
+        delta_f = f_0_1 * delta_lam + f_0_2 * delta_lam**2 + f_0_3 * delta_lam**3 #+ f_0_4 * delta_lam**4 + f_0_5 * delta_lam**5
+        delta_g = g_0_1 * delta_lam + g_0_2 * delta_lam**2 + g_0_3 * delta_lam**3 #+ g_0_4 * delta_lam**4 + g_0_5 * delta_lam**5
+
+        log_MH_ratio = ((SpecNumLayers)/ 2) * (np.log(lam_p) - np.log(lambdas[t])) - 0.5 * (delta_g + gammas[t] * delta_f) - betaD * gammas[t] * delta_lam
+
+        #accept or rejeict new lam_p
+        u = np.random.uniform()
+        if np.log(u) <= log_MH_ratio:
+        #accept
+            k = k + 1
+            lambdas[t + 1] = lam_p
+
+            f_old = np.copy(f_new)
+            rate_old = np.copy(rate)
+            f_new = f_0 + delta_f
+            #g_old = np.copy(g_new)
+            rate = f_new/2 + betaG + betaD * lam_p#lambdas[t+1]
+            if rate <= 0:
+                k -=  1
+                print('scale < 0')
+                lambdas[t + 1] = np.copy(lambdas[t])
+                f_new = np.copy(f_old)
+                rate = np.copy(rate_old)
+        else:
+            #rejcet
+            lambdas[t + 1] = np.copy(lambdas[t])
+
+
+        gammas[t+1] = np.random.gamma(shape = shape, scale = 1/rate)
+
+
+    return lambdas, gammas,k
+
+def forward_substitution(L, b):
+    # Get number of rows
+    n = L.shape[0]
+
+    # Allocating space for the solution vector
+    y = np.zeros_like(b, dtype=np.double);
+
+    # Here we perform the forward-substitution.
+    # Initializing  with the first row.
+    y[0] = b[0] / L[0, 0]
+
+    # Looping over rows in reverse (from the bottom  up),
+    # starting with the second to last row, because  the
+    # last row solve was completed in the last step.
+    for i in range(1, n):
+        y[i] = (b[i] - np.dot(L[i, :i], y[:i])) / L[i, i]
+
+    return y
+
+def back_substitution(U, y):
+    # Number of rows
+    n = U.shape[0]
+
+    # Allocating space for the solution vector
+    x = np.zeros_like(y, dtype=np.double)
+
+    # Here we perform the back-substitution.
+    # Initializing with the last row.
+    x[-1] = y[-1] / U[-1, -1]
+
+    # Looping over rows in reverse (from the bottom up),
+    # starting with the second to last row, because the
+    # last row solve was completed in the last step.
+    for i in range(n - 2, -1, -1):
+        x[i] = (y[i] - np.dot(U[i, i:], x[i:])) / U[i, i]
+
+    return x
+
+
+def lu_solve(L, U, b):
+
+    y = forward_substitution(L, b)
+
+    return back_substitution(U, y)
