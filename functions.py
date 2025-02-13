@@ -46,7 +46,7 @@ def gen_sing_map(meas_ang, height, obs_height, R):
             t += 1
 
         # first dr
-        A_height[m, t - 1] =  np.sqrt((layers[t] + R) ** 2 - (tang_height[m] + R) ** 2)
+        A_height[m, t - 1] = np.sqrt((layers[t] + R) ** 2 - (tang_height[m] + R) ** 2)
         dr = A_height[m, t - 1]
         for i in range(t, len(layers) - 1):
             A_height[m, i] = np.sqrt((layers[i + 1] + R) ** 2 - (tang_height[m] + R) ** 2) - dr
@@ -129,19 +129,18 @@ def add_noise(signal, snr):
     return noisy_signal, 1/noise_power**2
 
 
-def calcNonLin(A_lin, pressure_values, ind, temp_values, VMR_O3, AscalConstKmToCm, SpecNumLayers, SpecNumMeas):
-
+def calcNonLin(A_lin, pressure_values, ind, temp_values, VMR_O3, AscalConstKmToCm, wvnmbr, S, E,g_doub_prime):
+    '''careful that A_lin is just dx values
+    maybe do A_lin_copy = np.copy(A_lin/2)
+    A_lin_copy[:,-1] = A_lin_copy[:,-1] * 2
+    if A_lin has been generated for linear data'''
 
     SpecNumMeas, SpecNumLayers = np.shape(A_lin)
     temp = temp_values.reshape((SpecNumLayers, 1))
-    wvnmbr = np.loadtxt('wvnmbr.txt').reshape((909,1))
-    S = np.loadtxt('S.txt').reshape((909,1))
-    F = np.loadtxt('F.txt').reshape((909,1))
-    g_air = np.loadtxt('g_air.txt').reshape((909,1))
-    g_self = np.loadtxt('g_self.txt').reshape((909,1))
-    E = np.loadtxt('E.txt').reshape((909,1))
-    n_air = np.loadtxt('n_air.txt').reshape((909,1))
-    g_doub_prime = np.loadtxt('g_doub_prime.txt').reshape((909,1))
+    # wvnmbr = np.loadtxt('wvnmbr.txt').reshape((909,1))
+    # S = np.loadtxt('S.txt').reshape((909,1))
+    # E = np.loadtxt('E.txt').reshape((909,1))
+    # g_doub_prime = np.loadtxt('g_doub_prime.txt').reshape((909,1))
 
     # from : https://hitran.org/docs/definitions-and-units/
     HitrConst2 = 1.4387769  # in cm K
@@ -155,10 +154,7 @@ def calcNonLin(A_lin, pressure_values, ind, temp_values, VMR_O3, AscalConstKmToC
                 1 - np.exp(- HitrConst2 * wvnmbr[ind, 0] / temp)) / (
                               1 - np.exp(- HitrConst2 * wvnmbr[ind, 0] / 296))
 
-    C1 = 2 * constants.h * constants.c ** 2 * v_0 ** 3 * 1e8
-    C2 = constants.h * constants.c * 1e2 * v_0 / (constants.Boltzmann * temp)
-    # plancks function
-    Source = np.array(C1 / (np.exp(C2) - 1))
+
 
     # take linear
     num_mole = 1 / (constants.Boltzmann)
@@ -170,16 +166,17 @@ def calcNonLin(A_lin, pressure_values, ind, temp_values, VMR_O3, AscalConstKmToC
     mask = A_lin * np.ones((SpecNumMeas, SpecNumLayers))
     mask[mask != 0] = 1
     preTrans = np.zeros((SpecNumMeas, SpecNumLayers))
-    #ConcValMat = np.tril(np.ones(len(ConcVal))) * ConcVal
-    #ValPerLayPre = mask * (A_lin @ ConcValMat)
+
+
     for i in range(0,SpecNumMeas):
-        for j in range(0, SpecNumLayers):
+        for j in range(0, SpecNumLayers-1):
             if mask[i,j] !=0 :
                 currMask = np.copy(mask[i, :])
                 currMask[j] = 0.5
                 currMask[-1] = 0.5
                 ValPerLayPre = np.sum(ConcVal.T * currMask * A_lin[i,:])
                 preTrans[i,j] = np.exp(ValPerLayPre)
+        preTrans[i, -1] = 1
     afterTrans = np.zeros((SpecNumMeas, SpecNumLayers))
     for i in range(0,SpecNumMeas):
         for j in range(0, SpecNumLayers):
@@ -190,11 +187,6 @@ def calcNonLin(A_lin, pressure_values, ind, temp_values, VMR_O3, AscalConstKmToC
                 currMask2[-1] = 0.5
                 ValPerLayAfter = np.sum(ConcVal.T * currMask1 * A_lin[i,:]) + np.sum(ConcVal[:j+1].T * currMask2 * A_lin[i,:j+1])
                 afterTrans[i,j] = np.exp(ValPerLayAfter)
-    #ConcValMatAft = np.triu(np.ones(len(ConcVal))) * ConcVal
-    #ValPerLayAft = mask * (A_lin @ ConcValMatAft)
-    #BasPreTrans = (A_lin @ ConcValMat)[0::, 0].reshape((SpecNumMeas, 1)) @ np.ones((1, SpecNumLayers))
-    #afterTrans = np.exp( (BasPreTrans + ValPerLayAft) * mask )
-
 
     return preTrans + afterTrans
 
