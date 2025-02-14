@@ -334,7 +334,7 @@ def LinModelSolve(LinDataY, NonLinDataY, SpecNumMeas):
             RealMap = np.zeros((SpecNumMeas, SpecNumMeas))
 
             for i in range(0, SpecNumMeas):
-                RealMap[i] = np.linalg.solve(NonLinDataY, LinDataY[:, i])
+                RealMap[i,:] = np.linalg.solve(NonLinDataY, LinDataY[:, i])
 
         except np.linalg.LinAlgError:
             RealMap = None
