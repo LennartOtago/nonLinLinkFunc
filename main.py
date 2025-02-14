@@ -172,8 +172,7 @@ const = np.linspace(0,5e-6,numberOfDat)
 # OrgData
 A_O3, theta_scale_O3 = composeAforO3(A_lin, temp_values, pressure_values, ind, scalingConst)
 nonLinA = calcNonLin(A_lin, pressure_values, ind, temp_values, VMR_O3,
-                     AscalConstKmToCm,
-                     SpecNumLayers, SpecNumMeas)
+                     AscalConstKmToCm, wvnmbr, S, E,g_doub_prime)
 OrgData = np.matmul(A_O3 * nonLinA,VMR_O3 * theta_scale_O3)
 # OrgData = np.matmul(A_O3 * 2,VMR_O3 * theta_scale_O3)
 y , gamma0 = add_noise(OrgData, SNR)
@@ -389,7 +388,7 @@ DatCol =  'gray'
 ResCol = "#1E88E5"
 TrueCol = [50/255,220/255, 0/255]
 currMap = np.eye(SpecNumMeas)
-RealMap, relMapErr, LinDataY, NonLinDataY, testO3 = genDataFindandtestMap(currMap, L_d, gamma0, VMR_O3, Results, AscalConstKmToCm, A_lin, temp_values, pressure_values, ind, scalingConst, FirstSamp, relMapErrDat )
+RealMap, relMapErr, LinDataY, NonLinDataY, testO3 = genDataFindandtestMap(currMap, L_d, gamma0, VMR_O3, Results, AscalConstKmToCm, A_lin, temp_values, pressure_values, ind, scalingConst, FirstSamp, relMapErrDat , wvnmbr, S, E,g_doub_prime)
 print(f'Mean rel Error form Map: {np.mean(relMapErr):.2f}')
 
 fig4, ax4 = plt.subplots(figsize=set_size(PgWidthPt, fraction=fraction))
@@ -416,6 +415,8 @@ ax4.xaxis.set_ticks_position('top')
 ax4.xaxis.set_label_position('top')
 #plt.savefig('MapAssesment.svg')
 plt.show()
+
+
 ## do now with mapped data
 y_mapped = RealMap @ y
 ATy_mapped = np.matmul(A.T, y_mapped)
