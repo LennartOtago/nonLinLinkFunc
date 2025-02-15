@@ -334,7 +334,7 @@ def LinModelSolve(LinDataY, NonLinDataY, SpecNumMeas):
             RealMap = np.zeros((SpecNumMeas, SpecNumMeas))
 
             for i in range(0, SpecNumMeas):
-                RealMap[i,:] = np.linalg.solve(NonLinDataY, LinDataY[:, i])
+                RealMap[i,:] = np.linalg.solve(LinDataY, NonLinDataY[:, i])
 
         except np.linalg.LinAlgError:
             RealMap = None
@@ -349,14 +349,14 @@ def testSolvedMap(RealMap, gamma0, testNum, SpecNumMeas, testNonLinY, testDataY)
 
         noise = np.random.multivariate_normal(np.zeros(SpecNumMeas), np.sqrt(1 / gamma0) * np.eye(SpecNumMeas))
 
-        mappedDat = RealMap @ (testNonLinY[k] + noise)
-        relMapErr[k] = np.linalg.norm((testDataY[k] + noise) - mappedDat) / np.linalg.norm((testDataY[k] + noise)) * 100
+        mappedDat = (RealMap @ testDataY[k]) + noise
+        relMapErr[k] = np.linalg.norm((testNonLinY[k] + noise) - mappedDat) / np.linalg.norm((testNonLinY[k] + noise)) * 100
 
 
     return relMapErr
 
 def genDataFindandtestMap(currMap, L_d, gamma0, VMR_O3, Results, AscalConstKmToCm, A_lin, temp_values, pressure_values, ind, scalingConst,SampleRounds, relMapErrDat, wvnmbr, S, E,g_doub_prime):
-    '''Find map from non-linear to linear data'''
+    '''Find map from linear to non-linear data'''
 
     SpecNumMeas, SpecNumLayers = A_lin.shape
     relMapErr = relMapErrDat
@@ -378,13 +378,14 @@ def genDataFindandtestMap(currMap, L_d, gamma0, VMR_O3, Results, AscalConstKmToC
             noise = np.random.normal(0, np.sqrt(1 / gamma0), SpecNumMeas)
             # noise = np.zeros(SpecNumMeas)
 
-            LinDataY[test] = np.matmul(A_O3 * 2, O3_Prof.reshape((SpecNumLayers, 1)) * theta_scale_O3).reshape(
+            LinDataY[test] = np.matmul( currMap @ (A_O3 * 2), O3_Prof.reshape((SpecNumLayers, 1)) * theta_scale_O3).reshape(
                 SpecNumMeas) + noise
             NonLinDataY[test] = np.matmul(A_O3 * nonLinA,
                                           O3_Prof.reshape((SpecNumLayers, 1)) * theta_scale_O3).reshape(
                 SpecNumMeas) + noise
             #currMap = np.eye(SpecNumMeas)
-            NonLinDataY[test] = currMap @ NonLinDataY[test]
+
+
         RealMap = LinModelSolve(LinDataY, NonLinDataY, SpecNumMeas)
 
 
@@ -402,10 +403,10 @@ def genDataFindandtestMap(currMap, L_d, gamma0, VMR_O3, Results, AscalConstKmToC
             nonLinA = calcNonLin(A_lin, pressure_values, ind, temp_values, currO3.reshape((SpecNumLayers, 1)),
                                  AscalConstKmToCm, wvnmbr, S, E,g_doub_prime)
 
-            testDataY[k] = np.matmul(A_O3 * 2, currO3.reshape((SpecNumLayers, 1)) * theta_scale_O3).reshape(SpecNumMeas) + noise
+            testDataY[k] = np.matmul(currMap @ (A_O3 * 2), currO3.reshape((SpecNumLayers, 1)) * theta_scale_O3).reshape(SpecNumMeas)# + noise
             testNonLinY[k] = np.matmul(A_O3 * nonLinA, currO3.reshape((SpecNumLayers, 1)) * theta_scale_O3).reshape(
-                SpecNumMeas) + noise
-            testNonLinY[k] = currMap @ testNonLinY[k]
+                SpecNumMeas) #+ noise
+            testNonLinY[k] = testDataY[k] #+ noise
 
         relMapErr = testSolvedMap(RealMap, gamma0, testNum, SpecNumMeas, testNonLinY, testDataY)
         print(np.mean(relMapErr))

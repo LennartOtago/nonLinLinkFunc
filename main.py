@@ -146,7 +146,7 @@ MinAng = np.arcsin((height_values[0] + R_Earth) / (R_Earth + ObsHeight))
 
 
 meas_ang = np.linspace(MinAng, MaxAng, SpecNumMeas)
-pointAcc = 0.0002
+pointAcc = 0.00045
 meas_ang = np.array(np.arange(MinAng[0], MaxAng[0], pointAcc))
 #meas_ang = np.array(np.arange(MinAng[0], MaxAng[0], 0.00045))
 SpecNumMeas = len(meas_ang)
@@ -158,7 +158,7 @@ np.savetxt('tang_heights_lin.txt',tang_heights_lin, fmt = '%.15f', delimiter= '\
 
 AscalConstKmToCm = 1e3
 ind = 623
-SNR = 100
+SNR = 60
 scalingConst = 1e11
 
 numberOfDat = SpecNumMeas
@@ -250,7 +250,7 @@ Diag = np.eye(n) * np.sum(TriU + TriL, 0)
 L_d = -TriU + Diag - TriL
 L_d[0, 0] = 2 * L_d[0, 0]
 L_d[-1, -1] = 2 * L_d[-1, -1]
-startInd = 23
+startInd = 40
 L_d[startInd::, startInd::] = L_d[startInd::, startInd::] * 5
 L_d[startInd, startInd] = -L_d[startInd, startInd-1] - L_d[startInd, startInd+1] #-L[startInd, startInd-2] - L[startInd, startInd+2]
 lowC_L = scy.linalg.cholesky(L_d, lower = True)
@@ -369,6 +369,49 @@ for p in range(1,FirstSamp):
     gamRes[p] = SetGamma
 
 
+
+
+IDiag = np.eye(len(B))
+PostMeanBinHist = 10
+lambHist, lambBinEdges = np.histogram(lambdas[burnIn:], bins=PostMeanBinHist, density=True)
+gamHist, gamBinEdges = np.histogram(gammas[burnIn:], bins=PostMeanBinHist, density=True)
+
+print(PostMeanBinHist)
+CondResults = np.zeros((PostMeanBinHist, len(B)))
+
+VarB = np.zeros((PostMeanBinHist, len(B), len(B)))
+gamInt = np.zeros(PostMeanBinHist)
+meanGamInt = np.zeros(PostMeanBinHist)
+for i in range(0, PostMeanBinHist):
+
+    SetLambda = lambBinEdges[i] + (lambBinEdges[i + 1] - lambBinEdges[i]) / 2
+
+    currB = ATA + SetLambda * L_d
+
+    LowTri = np.linalg.cholesky(currB)
+    UpTri = LowTri.T
+    B_inv_A_trans_y = lu_solve(LowTri, UpTri, ATy[0::, 0])
+    CondResults[i, :] = B_inv_A_trans_y * lambHist[i] / np.sum(lambHist)
+    B_inv = np.zeros(currB.shape)
+    # startTime = time.time()
+    LowTri = np.linalg.cholesky(currB)
+    UpTri = LowTri.T
+    for j in range(len(B)):
+        B_inv[:, j] = lu_solve(LowTri, UpTri, IDiag[:, j])
+
+    VarB[i] = B_inv *  lambHist[i] / np.sum(lambHist)
+    curGam = gamBinEdges[i] + (gamBinEdges[i + 1] - gamBinEdges[i]) / 2
+
+    gamInt[i] = 1 / curGam  * gamHist[i] / np.sum(gamHist)
+    meanGamInt[i] = curGam * gamHist[i] / np.sum(gamHist)
+
+newCondMean = scy.integrate.trapezoid(CondResults.T) / theta_scale_O3
+
+CondVar = scy.integrate.trapezoid(gamInt) * scy.integrate.trapezoid(VarB.T) / (theta_scale_O3) ** 2
+
+
+Results = np.random.multivariate_normal(newCondMean, CondVar,size=FirstSamp)
+
 firstMean = np.mean(Results, 0)
 ResCol = "#1E88E5"
 fig4, ax4 = plt.subplots(figsize=set_size(PgWidthPt, fraction=fraction))
@@ -378,6 +421,7 @@ for r in range(0,FirstSamp):
     ax4.plot(Sol,height_values,marker= '+',color = ResCol, zorder = 0, linewidth = 0.5, markersize = 5, alpha = 0.3)
 
 ax4.plot(firstMean, height_values,marker= 'o',color = 'r', label = 'sample Mean')
+line3 = ax4.errorbar(newCondMean,height_values,  xerr = np.sqrt(np.diag(CondVar)), markeredgecolor ='k', color = 'k' ,zorder=3, marker = '.', markersize =3, linewidth =1, capsize = 3)
 ax4.plot(VMR_O3, height_values,marker= 'o',color = 'g', label = 'ground truth')
 ax4.legend()
 plt.show()
@@ -399,13 +443,14 @@ plt.show()
 
 noise = np.random.normal(0, np.sqrt(1 / gamma0), size = OrgData.shape)
 linTestDat = np.matmul(A_O3 * 2,VMR_O3 * theta_scale_O3) + noise
+MapLinTestDat = np.matmul( RealMap @ (A_O3 * 2),VMR_O3 * theta_scale_O3) + noise
 nonLinTestDat = OrgData + noise
 
 fig4, ax4 = plt.subplots(figsize=set_size(PgWidthPt, fraction=fraction))
 ax4.plot( linTestDat,tang_heights_lin, linestyle = 'dotted', marker = 'o', label = 'true linear data', markersize = 5 , zorder = 3, color = 'k')
-relErr = np.linalg.norm( RealMap @ nonLinTestDat -  linTestDat) / np.linalg.norm(RealMap @ nonLinTestDat) * 100
+relErr = np.linalg.norm( nonLinTestDat -  MapLinTestDat) / np.linalg.norm(nonLinTestDat) * 100
 print(relErr)
-ax4.plot(RealMap @ nonLinTestDat,tang_heights_lin, linestyle = 'dotted', marker = 'o', label = r'map. $\bm{y}$' + f', rel. Err.: {relErr:.1f} \%', markersize = 7, zorder = 1, color ='r')
+ax4.plot(MapLinTestDat,tang_heights_lin, linestyle = 'dotted', marker = 'o', label = r'map. $\bm{y}$' + f', rel. Err.: {relErr:.1f} \%', markersize = 7, zorder = 1, color ='r')
 ax4.plot(nonLinTestDat,tang_heights_lin, linestyle = 'dotted', marker = '*', label = 'original data', markersize = 20, zorder = 0, color = DatCol )
 ax4.legend()
 ax4.set_ylabel('(tangent) height in km')
