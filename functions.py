@@ -28,32 +28,6 @@ def get_temp_values(height_values):
 
     return temp_values.reshape((len(height_values),1))
 
-def gen_sing_map(meas_ang, height, obs_height, R):
-    tang_height = np.around((np.sin(meas_ang) * (obs_height + R)) - R, 2)
-    num_meas = len(tang_height)
-    # add one extra layer so that the difference in height can be calculated
-    layers = np.zeros((len(height)+1,1))
-    layers[0:-1] = height
-    layers[-1] = height[-1] + (height[-1] - height[-2])/2
-
-
-    A_height = np.zeros((num_meas, len(layers)-1))
-    t = 0
-    for m in range(0, num_meas):
-
-        while layers[t] <= tang_height[m]:
-
-            t += 1
-
-        # first dr
-        A_height[m, t - 1] = np.sqrt((layers[t] + R) ** 2 - (tang_height[m] + R) ** 2)
-        dr = A_height[m, t - 1]
-        for i in range(t, len(layers) - 1):
-            A_height[m, i] = np.sqrt((layers[i + 1] + R) ** 2 - (tang_height[m] + R) ** 2) - dr
-            dr = dr + A_height[m, i]
-        A_height[m, i] =  0.5 * A_height[m, i]
-    #return 2 * (A_...) for linear part
-    return  A_height, tang_height, layers[-1]
 
 
 def composeAforO3(A_lin, temp, press, ind, scalingConst):
@@ -129,13 +103,37 @@ def add_noise(signal, snr):
     return noisy_signal, 1/noise_power**2
 
 
-def calcNonLin(A_lin, pressure_values, ind, temp_values, VMR_O3, AscalConstKmToCm, wvnmbr, S, E,g_doub_prime):
+'''generate forward map accoring to trapezoidal rule'''
+def gen_sing_map(dxs, tang_heights, heights):
+    m,n = dxs.shape
+    A_lin = np.zeros((m,n+1))
+    for i in range(0,m):
+        t = 0
+        while heights[t] <= tang_heights[i]:
+            t += 1
+        A_lin[i, t-1] = 0.5 * dxs[i, t-1]
+        for j in range(t, n):
+            A_lin[i,j] = 0.5 * (dxs[i,j-1] + dxs[i,j])
+        A_lin[i, -1] = 0.5 * dxs[i, -1]
+    return A_lin
+
+def gen_trap_rul(dxs):
+    val = np.zeros(len(dxs)+1)
+    val[0] = dxs[0] * 0.5
+    for i in range(1,len(dxs)):
+        val[i] = (dxs[i-1] + dxs[i])* 0.5
+
+    val[-1] = dxs[-1] * 0.5
+    return val
+
+def calcNonLin(tang_heights, dxs,  height_values, pressure_values, ind, temp_values, VMR_O3, AscalConstKmToCm, wvnmbr, S, E,g_doub_prime):
     '''careful that A_lin is just dx values
     maybe do A_lin_copy = np.copy(A_lin/2)
     A_lin_copy[:,-1] = A_lin_copy[:,-1] * 2
     if A_lin has been generated for linear data'''
 
-    SpecNumMeas, SpecNumLayers = np.shape(A_lin)
+    SpecNumLayers = len(temp_values)#
+    SpecNumMeas = len(tang_heights)
     temp = temp_values.reshape((SpecNumLayers, 1))
     # wvnmbr = np.loadtxt('wvnmbr.txt').reshape((909,1))
     # S = np.loadtxt('S.txt').reshape((909,1))
@@ -162,31 +160,29 @@ def calcNonLin(A_lin, pressure_values, ind, temp_values, VMR_O3, AscalConstKmToC
     theta = num_mole * f_broad * 1e-4 * VMR_O3.reshape((SpecNumLayers,1)) * S[ind,0]
     ConcVal = - pressure_values.reshape((SpecNumLayers, 1)) * 1e2 * LineIntScal / temp_values * theta * AscalConstKmToCm
 
-
-    mask = A_lin * np.ones((SpecNumMeas, SpecNumLayers))
-    mask[mask != 0] = 1
-    preTrans = np.zeros((SpecNumMeas, SpecNumLayers))
-
-
-    for i in range(0,SpecNumMeas):
-        for j in range(0, SpecNumLayers-1):
-            if mask[i,j] !=0 :
-                currMask = np.copy(mask[i, :])
-                currMask[j] = 0.5
-                currMask[-1] = 0.5
-                ValPerLayPre = np.sum(ConcVal.T * currMask * A_lin[i,:])
-                preTrans[i,j] = np.exp(ValPerLayPre)
-        preTrans[i, -1] = 1
     afterTrans = np.zeros((SpecNumMeas, SpecNumLayers))
+    preTrans = np.zeros((SpecNumMeas, SpecNumLayers))
     for i in range(0,SpecNumMeas):
-        for j in range(0, SpecNumLayers):
-            if mask[i,j] !=0 :
-                currMask1 = np.copy(mask[i, :])
-                currMask1[-1] = 0.5
-                currMask2 = np.copy(mask[i, :j+1])
-                currMask2[-1] = 0.5
-                ValPerLayAfter = np.sum(ConcVal.T * currMask1 * A_lin[i,:]) + np.sum(ConcVal[:j+1].T * currMask2 * A_lin[i,:j+1])
-                afterTrans[i,j] = np.exp(ValPerLayAfter)
+        t = 0
+        while height_values[t] <= tang_heights[i]:
+            t += 1
+            currDxs = gen_trap_rul(np.append(np.flip(dxs[i, t - 1:]), dxs[i, t - 1]))
+            ValPerLayAfter = np.sum(np.append(np.flip(ConcVal[t - 1:]), ConcVal[t]) * currDxs)
+            afterTrans[i, t - 1] = np.exp(ValPerLayAfter)
+            for j in range(t-1, SpecNumLayers-1):
+                currDxs = gen_trap_rul(dxs[i,j:])
+                ValPerLayPre = np.sum(ConcVal[j:].T  * currDxs)
+                preTrans[i,j] = np.exp(ValPerLayPre)
+
+                if j >=t:
+                    currDxs = gen_trap_rul(np.append(np.flip(dxs[i, t - 1:]), dxs[i, t - 1:j]))
+                    ValPerLayAfter = np.sum(np.append(np.flip(ConcVal[t - 1:]), ConcVal[t:j + 1]) * currDxs)
+                    afterTrans[i, j] = np.exp(ValPerLayAfter)
+
+        currDxs = gen_trap_rul(np.append(np.flip(dxs[i, t - 1:]), dxs[i, t - 1:]))
+        ValPerLayAfter = np.sum(np.append(np.flip(ConcVal[t - 1:]), ConcVal[t:]) * currDxs)
+        afterTrans[i, -1] = np.exp(ValPerLayAfter)
+        preTrans[i, -1] = 1
 
     return preTrans + afterTrans
 
@@ -355,7 +351,7 @@ def testSolvedMap(RealMap, gamma0, testNum, SpecNumMeas, testNonLinY, testDataY)
 
     return relMapErr
 
-def genDataFindandtestMap(currMap, L_d, gamma0, VMR_O3, Results, AscalConstKmToCm, A_lin, temp_values, pressure_values, ind, scalingConst,SampleRounds, relMapErrDat, wvnmbr, S, E,g_doub_prime):
+def genDataFindandtestMap(currMap, tang_heights_lin, A_lin_dx,  height_values, gamma0, VMR_O3, Results, AscalConstKmToCm, A_lin, temp_values, pressure_values, ind, scalingConst,SampleRounds, relMapErrDat, wvnmbr, S, E,g_doub_prime):
     '''Find map from linear to non-linear data'''
 
     SpecNumMeas, SpecNumLayers = A_lin.shape
@@ -373,8 +369,7 @@ def genDataFindandtestMap(currMap, L_d, gamma0, VMR_O3, Results, AscalConstKmToC
 
             O3_Prof = Results[ProfRand]
             O3_Prof[O3_Prof < 0] = 0
-            nonLinA = calcNonLin(A_lin, pressure_values, ind, temp_values,
-                                 O3_Prof.reshape((SpecNumLayers, 1)), AscalConstKmToCm, wvnmbr, S, E,g_doub_prime)
+            nonLinA = calcNonLin(tang_heights_lin, A_lin_dx,  height_values, pressure_values, ind, temp_values, VMR_O3, AscalConstKmToCm, wvnmbr, S, E,g_doub_prime)
             noise = np.random.normal(0, np.sqrt(1 / gamma0), SpecNumMeas)
             # noise = np.zeros(SpecNumMeas)
 
@@ -390,7 +385,7 @@ def genDataFindandtestMap(currMap, L_d, gamma0, VMR_O3, Results, AscalConstKmToC
 
 
         #test map do find error
-        testNum = len(Results)#100
+        testNum = 10# len(Results)#100
         testO3 = Results#np.random.multivariate_normal(VMR_O3.reshape(SpecNumLayers), 1e-18 * L_d, size=testNum)
         testO3[testO3 < 0] = 0
 
@@ -400,8 +395,7 @@ def genDataFindandtestMap(currMap, L_d, gamma0, VMR_O3, Results, AscalConstKmToC
         for k in range(0, testNum):
             currO3 = testO3[k]
             noise = np.random.normal(0, np.sqrt(1 / gamma0), SpecNumMeas)
-            nonLinA = calcNonLin(A_lin, pressure_values, ind, temp_values, currO3.reshape((SpecNumLayers, 1)),
-                                 AscalConstKmToCm, wvnmbr, S, E,g_doub_prime)
+            nonLinA = calcNonLin(tang_heights_lin, A_lin_dx,  height_values, pressure_values, ind, temp_values, VMR_O3, AscalConstKmToCm, wvnmbr, S, E,g_doub_prime)
 
             testDataY[k] = np.matmul(currMap @ (A_O3 * 2), currO3.reshape((SpecNumLayers, 1)) * theta_scale_O3).reshape(SpecNumMeas)# + noise
             testNonLinY[k] = np.matmul(A_O3 * nonLinA, currO3.reshape((SpecNumLayers, 1)) * theta_scale_O3).reshape(
@@ -409,8 +403,9 @@ def genDataFindandtestMap(currMap, L_d, gamma0, VMR_O3, Results, AscalConstKmToC
             testNonLinY[k] = testDataY[k] #+ noise
 
         relMapErr = testSolvedMap(RealMap, gamma0, testNum, SpecNumMeas, testNonLinY, testDataY)
-        print(np.mean(relMapErr))
+        print('mean realtive Error: ' + str(np.mean(relMapErr)))
         currMap = RealMap @ np.copy(currMap)
+        relMapErr = 1
     return currMap, relMapErr, LinDataY, NonLinDataY, testO3
 # def testMachMap(Map):
 
