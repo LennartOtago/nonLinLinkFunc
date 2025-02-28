@@ -21,7 +21,7 @@ plt.rcParams.update({'font.size': fraction * 12,
 
 
 dir = '/home/lennartgolks/PycharmProjects/firstModelCheckPhD/'
-dir = '/Users/lennart/PycharmProjects/firstModelCheckPhD/'
+#dir = '/Users/lennart/PycharmProjects/firstModelCheckPhD/'
 B_inv_A_trans_y0 = np.loadtxt(dir + 'B_inv_A_trans_y0.txt')
 VMR_O3 = np.loadtxt(dir + 'VMR_O3.txt')
 VMR_O3 = VMR_O3.reshape((len(VMR_O3), 1))
@@ -38,6 +38,7 @@ ATemp = np.loadtxt(dir + 'AT.txt')
 APressTemp = np.loadtxt(dir + 'APT.txt')
 gamma0 = np.loadtxt(dir + 'gamma0.txt')
 y = np.loadtxt(dir + 'dataY.txt')
+y = np.loadtxt(dir + 'nonLinDataY.txt')
 L = np.loadtxt(dir + 'GraphLaplacian.txt')
 theta_scale_O3 = np.loadtxt(dir + 'theta_scale_O3.txt')
 tang_heights_lin = np.loadtxt(dir + 'tan_height_values.txt')
@@ -353,14 +354,15 @@ plt.show()
 
 
 ## do now with mapped data
-y_mapped = RealMap @ y
-ATy_mapped = np.matmul(A.T, y_mapped)
+A_new = RealMap @ A
+ATy_new = np.matmul(A_new.T, y)
+ATA_new = np.matmul(A_new.T, A_new)
 B = (ATA + lam0 * L_d)
 
 LowTri = np.linalg.cholesky(B)
 UpTri = LowTri.T
 # check if L L.H = B
-B_inv_A_trans_y0_mapped = lu_solve(LowTri, UpTri,  ATy_mapped[0::, 0])
+B_inv_A_trans_y0_mapped = lu_solve(LowTri, UpTri,  ATy_new[0::, 0])
 
 
 
@@ -368,9 +370,9 @@ B_inv_A_trans_y0_mapped = lu_solve(LowTri, UpTri,  ATy_mapped[0::, 0])
 
 f_coeff = np.zeros(3)
 
-f_coeff[0] = np.matmul(np.matmul(ATy_mapped[0::, 0].T, B_inv_L), B_inv_A_trans_y0_mapped)
-f_coeff[1] = -1 * np.matmul(np.matmul(ATy_mapped[0::, 0].T, B_inv_L_2), B_inv_A_trans_y0_mapped)
-f_coeff[2] = 1 * np.matmul(np.matmul(ATy_mapped[0::, 0].T,B_inv_L_3) ,B_inv_A_trans_y0_mapped)
+f_coeff[0] = np.matmul(np.matmul(ATy_new[0::, 0].T, B_inv_L), B_inv_A_trans_y0_mapped)
+f_coeff[1] = -1 * np.matmul(np.matmul(ATy_new[0::, 0].T, B_inv_L_2), B_inv_A_trans_y0_mapped)
+f_coeff[2] = 1 * np.matmul(np.matmul(ATy_new[0::, 0].T,B_inv_L_3) ,B_inv_A_trans_y0_mapped)
 
 
 
@@ -379,7 +381,7 @@ number_samples = 10000
 burnIn = 100
 gamma0 = minimum[0]
 lam0 = minimum[1]
-f_0 = f(ATy_mapped, y_mapped, B_inv_A_trans_y0_mapped)
+f_0 = f(ATy_new, y, B_inv_A_trans_y0_mapped)
 
 startTime = time.time()
 lambdas, gammas, k = MHwG(number_samples, burnIn, lam0, gamma0, f_0, f_coeff, g_coeff, betaG, betaD, n, m)
@@ -503,45 +505,4 @@ print(
 ##
 
 print('done')
-
-## plot lin and non lin data to show that it is the same
-
-
-fig4, ax4 = plt.subplots(figsize=set_size(PgWidthPt, fraction=fraction))
-# ranInd = np.random.randint(SpecNumMeas)
-for r in range(0,SpecNumMeas):
-
-    ax4.plot(LinDataY[r],tang_heights_lin, linestyle = 'dotted', marker = 'o', label = 'linear data', markersize = 2 , color = 'k', linewidth = 0.1, zorder = 2)
-    ax4.plot(RealMap @ NonLinDataY[r],tang_heights_lin, linestyle = 'dotted', marker = 'o', label = 'mapped data', markersize = 5 ,zorder = 1,  color = 'r', linewidth = 0.1)
-    ax4.plot(NonLinDataY[r],tang_heights_lin, linestyle = 'dotted', marker = '*', label = 'data', markersize = 15 , zorder = 0, color = DatCol, linewidth = 1)
-
-handles, labels = ax4.get_legend_handles_labels()
-legend = ax4.legend(handles = [handles[0], handles[1], handles[2]])# loc='lower right', framealpha = 0.2,fancybox=True)#, bbox_to_anchor=(1.01, 1.01), frameon =True)
-
-ax4.set_ylabel('(tangent) height in km')
-ax4.set_xlabel(r'spectral radiance in $\frac{\text{W} \text{cm}}{\text{m}^2 \text{sr}} $',labelpad=10)# color =dataCol,
-ax4.xaxis.set_ticks_position('top')
-ax4.xaxis.set_label_position('top')
-
-plt.savefig('DataAssesment.svg')
-plt.show()
-
-print('done')
-
-
-#plot one eaxmaple of map
-## for machine learning
-# num_epochs = 100
-# model = DoMachLearing(num_epochs, NonLinDataY.T, LinDataY.T)
-# # evaluate machine model
-# # normTestNonLin = ((testNonLinY+noise) - np.mean(NonLinDataY.T, 1)) / np.std(NonLinDataY.T, 1)
-# # normTestNonLin_tensor = torch.tensor(normTestNonLin, dtype = torch.float32).view(1,-1)
-# #
-# # model.eval()
-# # with torch.no_grad():
-# #     normTestOutput = model(normTestNonLin_tensor)
-# # TorchPredic =  np.array(normTestOutput).reshape(SpecNumMeas) * np.std(LinDataY.T, 1) + np.mean(LinDataY.T, 1)
-# # relTorchMapErr = np.linalg.norm((testDataY+noise) - TorchPredic) / np.linalg.norm((testDataY+noise)) *100
-#
-# print('Machine Learning done')
 
